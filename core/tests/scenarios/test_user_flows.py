@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import FAQ, RSVP, Collection, Thing, User
+from core.models import RSVP, User
 
 
 @pytest.mark.django_db

@@ -188,7 +188,8 @@ class CollectionInviteView(APIView):
             recipient_list=[email],
             html_message=f"""
             <html>
-            <p>{request.user.user_name or 'Someone'} te ha invitado a ver: {collection.collection_headline}</p>
+            <p>{request.user.user_name or 'Someone'} te ha invitado a ver:</p>
+            <p><strong>{collection.collection_headline}</strong></p>
             <p>Accede para verlo: <a href="{magic_link_base}">{magic_link_base}</a></p>
             </html>
             """,
