@@ -13,9 +13,7 @@ class Theeeme(models.Model):
     Contains 10 color values (hex codes without #).
     """
 
-    theeeme_code = models.CharField(
-        max_length=6, primary_key=True, default=generate_id
-    )
+    theeeme_code = models.CharField(max_length=6, primary_key=True, default=generate_id)
     theeeme_name = models.CharField(max_length=16)
     theeeme_010 = models.CharField(max_length=6)
     theeeme_020 = models.CharField(max_length=6)
