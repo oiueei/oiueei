@@ -4,7 +4,7 @@ Collection serializers for OIUEEI.
 
 from rest_framework import serializers
 
-from core.models import Collection
+from core.models import Collection, Theeeme
 from core.utils import cloudinary_url
 
 
@@ -13,6 +13,10 @@ class CollectionSerializer(serializers.ModelSerializer):
 
     collection_thumbnail_url = serializers.SerializerMethodField()
     collection_hero_url = serializers.SerializerMethodField()
+    collection_theeeme = serializers.SlugRelatedField(
+        slug_field="theeeme_code",
+        queryset=Theeeme.objects.all(),
+    )
 
     class Meta:
         model = Collection
@@ -49,6 +53,12 @@ class CollectionSerializer(serializers.ModelSerializer):
 class CollectionCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating a collection."""
 
+    collection_theeeme = serializers.SlugRelatedField(
+        slug_field="theeeme_code",
+        queryset=Theeeme.objects.all(),
+        required=False,
+    )
+
     class Meta:
         model = Collection
         fields = [
@@ -62,6 +72,12 @@ class CollectionCreateSerializer(serializers.ModelSerializer):
 
 class CollectionUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating a collection."""
+
+    collection_theeeme = serializers.SlugRelatedField(
+        slug_field="theeeme_code",
+        queryset=Theeeme.objects.all(),
+        required=False,
+    )
 
     class Meta:
         model = Collection

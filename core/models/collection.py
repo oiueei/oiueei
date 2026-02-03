@@ -29,7 +29,12 @@ class Collection(models.Model):
     collection_status = models.CharField(max_length=8, choices=STATUS_CHOICES, default="ACTIVE")
     collection_articles = models.JSONField(default=list, blank=True)  # Array of thing_codes
     collection_invites = models.JSONField(default=list, blank=True)  # Array of user_codes
-    collection_theeeme = models.CharField(max_length=32, default="BAR_CEL_ONA")
+    collection_theeeme = models.ForeignKey(
+        "Theeeme",
+        on_delete=models.PROTECT,
+        to_field="theeeme_code",
+        db_column="collection_theeeme",
+    )
 
     class Meta:
         app_label = "core"

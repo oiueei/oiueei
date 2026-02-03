@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from core.models import FAQ, RSVP, Collection, Thing, User
+from core.models import FAQ, RSVP, Collection, Theeeme, Thing, User
 from core.utils import cloudinary_url, generate_id
 
 
@@ -114,63 +114,111 @@ class TestRSVPModel:
 
 
 @pytest.mark.django_db
+class TestTheeemeModel:
+    """Tests for Theeeme model."""
+
+    def test_create_theeeme(self):
+        """Should create a theeeme with generated code."""
+        theeeme = Theeeme.objects.create(
+            theeeme_name="Barcelona",
+            theeeme_010="FFFFFF",
+            theeeme_020="F0F0F0",
+            theeeme_040="E0E0E0",
+            theeeme_060="C0C0C0",
+            theeeme_080="A0A0A0",
+            theeeme_100="808080",
+            theeeme_200="606060",
+            theeeme_400="404040",
+            theeeme_600="202020",
+            theeeme_800="000000",
+        )
+        assert len(theeeme.theeeme_code) == 6
+        assert theeeme.theeeme_name == "Barcelona"
+
+    def test_theeeme_str(self):
+        """Should return readable string representation."""
+        theeeme = Theeeme.objects.create(
+            theeeme_code="TSTSTR",
+            theeeme_name="TestTheme",
+            theeeme_010="FFFFFF",
+            theeeme_020="F0F0F0",
+            theeeme_040="E0E0E0",
+            theeeme_060="C0C0C0",
+            theeeme_080="A0A0A0",
+            theeeme_100="808080",
+            theeeme_200="606060",
+            theeeme_400="404040",
+            theeeme_600="202020",
+            theeeme_800="000000",
+        )
+        assert "TSTSTR" in str(theeeme)
+        assert "TestTheme" in str(theeeme)
+
+
+@pytest.mark.django_db
 class TestCollectionModel:
     """Tests for Collection model."""
 
-    def test_create_collection(self):
+    def test_create_collection(self, default_theeeme):
         """Should create a collection with generated code."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
+            collection_theeeme=default_theeeme,
         )
         assert len(collection.collection_code) == 6
         assert collection.collection_status == "ACTIVE"
-        assert collection.collection_theeeme == "BAR_CEL_ONA"
+        assert collection.collection_theeeme == default_theeeme
 
-    def test_add_thing(self):
+    def test_add_thing(self, default_theeeme):
         """Should add thing to collection."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
+            collection_theeeme=default_theeeme,
         )
         collection.add_thing("THNG01")
         assert "THNG01" in collection.collection_articles
 
-    def test_remove_thing(self):
+    def test_remove_thing(self, default_theeeme):
         """Should remove thing from collection."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
             collection_articles=["THNG01", "THNG02"],
+            collection_theeeme=default_theeeme,
         )
         collection.remove_thing("THNG01")
         assert "THNG01" not in collection.collection_articles
         assert "THNG02" in collection.collection_articles
 
-    def test_add_invite(self):
+    def test_add_invite(self, default_theeeme):
         """Should add user to invites."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
+            collection_theeeme=default_theeeme,
         )
         collection.add_invite("USR001")
         assert "USR001" in collection.collection_invites
 
-    def test_is_owner(self):
+    def test_is_owner(self, default_theeeme):
         """Should check ownership correctly."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
+            collection_theeeme=default_theeeme,
         )
         assert collection.is_owner("ABC123") is True
         assert collection.is_owner("XYZ789") is False
 
-    def test_can_view(self):
+    def test_can_view(self, default_theeeme):
         """Should check view permission correctly."""
         collection = Collection.objects.create(
             collection_owner="ABC123",
             collection_headline="My Collection",
             collection_invites=["USR001"],
+            collection_theeeme=default_theeeme,
         )
         assert collection.can_view("ABC123") is True  # Owner
         assert collection.can_view("USR001") is True  # Invited

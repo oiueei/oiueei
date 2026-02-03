@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import Collection, User
+from core.models import Collection, Theeeme, User
 from core.serializers import (
     CollectionCreateSerializer,
     CollectionInviteSerializer,
@@ -38,9 +38,16 @@ class CollectionListView(APIView):
         serializer = CollectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Use default theeeme if not provided
+        validated_data = serializer.validated_data
+        if "collection_theeeme" not in validated_data:
+            default_theeeme = Theeeme.objects.filter(theeeme_code="BRCLON").first()
+            if default_theeeme:
+                validated_data["collection_theeeme"] = default_theeeme
+
         collection = Collection.objects.create(
             collection_owner=request.user.user_code,
-            **serializer.validated_data,
+            **validated_data,
         )
 
         # Add to user's own collections

@@ -6,7 +6,29 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import FAQ, RSVP, Collection, Thing, User
+from core.models import FAQ, RSVP, Collection, Theeeme, Thing, User
+
+
+@pytest.fixture(autouse=True)
+def default_theeeme(db):
+    """Create the default theeeme for all tests."""
+    theeeme, _ = Theeeme.objects.get_or_create(
+        theeeme_code="BRCLON",
+        defaults={
+            "theeeme_name": "Barcelona",
+            "theeeme_010": "FFFFFF",
+            "theeeme_020": "F5F5F5",
+            "theeeme_040": "E0E0E0",
+            "theeeme_060": "BDBDBD",
+            "theeeme_080": "9E9E9E",
+            "theeeme_100": "757575",
+            "theeeme_200": "616161",
+            "theeeme_400": "424242",
+            "theeeme_600": "212121",
+            "theeeme_800": "000000",
+        },
+    )
+    return theeeme
 
 
 @pytest.fixture
@@ -62,12 +84,19 @@ def rsvp(db, user):
 
 
 @pytest.fixture
-def collection(db, user):
+def theeeme(default_theeeme):
+    """Return the default theeeme for tests that explicitly need it."""
+    return default_theeeme
+
+
+@pytest.fixture
+def collection(db, user, theeeme):
     """Create a test collection."""
     coll = Collection.objects.create(
         collection_code="COLL01",
         collection_owner=user.user_code,
         collection_headline="Test Collection",
+        collection_theeeme=theeeme,
     )
     user.user_own_collections.append(coll.collection_code)
     user.save()

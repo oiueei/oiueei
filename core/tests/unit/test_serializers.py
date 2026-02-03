@@ -79,13 +79,14 @@ class TestUserPublicSerializer:
 class TestCollectionSerializer:
     """Tests for CollectionSerializer."""
 
-    def test_serialize_collection(self):
+    def test_serialize_collection(self, default_theeeme):
         """Should serialize collection with all fields."""
         collection = Collection.objects.create(
             collection_code="COLL01",
             collection_owner="ABC123",
             collection_headline="My Collection",
             collection_thumbnail="thumb123",
+            collection_theeeme=default_theeeme,
         )
         serializer = CollectionSerializer(collection)
         data = serializer.data
@@ -93,14 +94,30 @@ class TestCollectionSerializer:
         assert data["collection_code"] == "COLL01"
         assert data["collection_headline"] == "My Collection"
         assert data["collection_thumbnail_url"] is not None
+        assert data["collection_theeeme"] == "BRCLON"
 
 
 class TestCollectionCreateSerializer:
     """Tests for CollectionCreateSerializer."""
 
     def test_valid_collection(self):
-        """Should accept valid collection data."""
-        serializer = CollectionCreateSerializer(data={"collection_headline": "My Collection"})
+        """Should accept valid collection data (theeeme is optional)."""
+        serializer = CollectionCreateSerializer(
+            data={
+                "collection_headline": "My Collection",
+            }
+        )
+        assert serializer.is_valid()
+
+    @pytest.mark.django_db
+    def test_valid_collection_with_theeeme(self, default_theeeme):
+        """Should accept valid collection data with theeeme."""
+        serializer = CollectionCreateSerializer(
+            data={
+                "collection_headline": "My Collection",
+                "collection_theeeme": default_theeeme.theeeme_code,
+            }
+        )
         assert serializer.is_valid()
 
     def test_missing_headline(self):
