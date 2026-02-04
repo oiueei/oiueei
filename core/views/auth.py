@@ -138,3 +138,35 @@ class MeView(APIView):
         user.update_last_activity()
         serializer = UserSerializer(user)
         return Response(serializer.data)
+
+
+class LogoutView(APIView):
+    """
+    POST /api/v1/auth/logout/
+    Logout the current user.
+
+    Optionally accepts a refresh token to blacklist it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.contrib.auth import logout
+
+        # Try to blacklist the refresh token if provided
+        refresh_token = request.data.get("refresh")
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except Exception:
+                # Blacklist might not be enabled or token invalid
+                pass
+
+        # Logout from Django session
+        logout(request)
+
+        return Response(
+            {"message": "Successfully logged out"},
+            status=status.HTTP_200_OK,
+        )

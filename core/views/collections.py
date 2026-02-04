@@ -225,3 +225,20 @@ class SharedCollectionsView(APIView):
         collections = Collection.objects.filter(collection_code__in=shared_codes)
         serializer = CollectionSerializer(collections, many=True)
         return Response(serializer.data)
+
+
+class InvitedCollectionsView(APIView):
+    """
+    GET /api/v1/invited-collections/
+    List collections where the current user is in collection_invites.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_code = request.user.user_code
+        # Use Python-side filtering for SQLite compatibility
+        all_collections = Collection.objects.all()
+        invited_collections = [c for c in all_collections if user_code in c.collection_invites]
+        serializer = CollectionSerializer(invited_collections, many=True)
+        return Response(serializer.data)

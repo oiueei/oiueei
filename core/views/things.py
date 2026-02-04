@@ -77,22 +77,6 @@ class ThingDetailView(APIView):
         except Thing.DoesNotExist:
             return None
 
-    def can_view_thing(self, user, thing):
-        """Check if user can view this thing (owner or in a shared collection)."""
-        if thing.is_owner(user.user_code):
-            return True
-
-        # Check if thing is in any collection shared with user
-        for collection_code in user.user_shared_collections:
-            try:
-                collection = Collection.objects.get(collection_code=collection_code)
-                if thing.thing_code in collection.collection_articles:
-                    return True
-            except Collection.DoesNotExist:
-                pass
-
-        return False
-
     def get(self, request, thing_code):
         thing = self.get_thing(thing_code)
         if not thing:
@@ -101,7 +85,7 @@ class ThingDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if not self.can_view_thing(request.user, thing):
+        if not thing.can_view(request.user.user_code):
             return Response(
                 {"error": "Not authorized to view this thing"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -230,3 +214,32 @@ class ThingReleaseView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class InvitedThingsView(APIView):
+    """
+    GET /api/v1/invited-things/
+    List things from collections where the current user is invited.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_code = request.user.user_code
+
+        # Get all collections where user is invited (Python-side filtering for SQLite)
+        all_collections = Collection.objects.all()
+        invited_collections = [c for c in all_collections if user_code in c.collection_invites]
+
+        # Collect all thing codes from those collections
+        thing_codes = []
+        for collection in invited_collections:
+            thing_codes.extend(collection.collection_articles)
+
+        # Remove duplicates
+        thing_codes = list(set(thing_codes))
+
+        # Get things
+        things = Thing.objects.filter(thing_code__in=thing_codes)
+        serializer = ThingSerializer(things, many=True)
+        return Response(serializer.data)

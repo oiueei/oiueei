@@ -4,15 +4,22 @@ URL configuration for core app.
 
 from django.urls import path
 
-from .views.auth import MeView, RequestLinkView, VerifyLinkView
+from .views.auth import LogoutView, MeView, RequestLinkView, VerifyLinkView
 from .views.collections import (
     CollectionDetailView,
     CollectionInviteView,
     CollectionListView,
+    InvitedCollectionsView,
     SharedCollectionsView,
 )
 from .views.faq import FAQAnswerView, FAQDetailView, ThingFAQListView
-from .views.things import ThingDetailView, ThingListView, ThingReleaseView, ThingReserveView
+from .views.things import (
+    InvitedThingsView,
+    ThingDetailView,
+    ThingListView,
+    ThingReleaseView,
+    ThingReserveView,
+)
 from .views.users import UserDetailView
 
 urlpatterns = [
@@ -20,11 +27,17 @@ urlpatterns = [
     path("auth/request-link/", RequestLinkView.as_view(), name="request-link"),
     path("auth/verify/<str:rsvp_code>/", VerifyLinkView.as_view(), name="verify-link"),
     path("auth/me/", MeView.as_view(), name="me"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     # Users
     path("users/<str:user_code>/", UserDetailView.as_view(), name="user-detail"),
     # Collections
     path("collections/", CollectionListView.as_view(), name="collection-list"),
     path("collections/shared/", SharedCollectionsView.as_view(), name="shared-collections"),
+    path(
+        "invited-collections/",
+        InvitedCollectionsView.as_view(),
+        name="invited-collections",
+    ),
     path(
         "collections/<str:collection_code>/",
         CollectionDetailView.as_view(),
@@ -37,6 +50,7 @@ urlpatterns = [
     ),
     # Things
     path("things/", ThingListView.as_view(), name="thing-list"),
+    path("invited-things/", InvitedThingsView.as_view(), name="invited-things"),
     path("things/<str:thing_code>/", ThingDetailView.as_view(), name="thing-detail"),
     path("things/<str:thing_code>/reserve/", ThingReserveView.as_view(), name="thing-reserve"),
     path("things/<str:thing_code>/release/", ThingReleaseView.as_view(), name="thing-release"),

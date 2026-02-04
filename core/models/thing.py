@@ -76,3 +76,24 @@ class Thing(models.Model):
         if faq_code in self.thing_faq:
             self.thing_faq.remove(faq_code)
             self.save(update_fields=["thing_faq"])
+
+    def can_view(self, user_code):
+        """
+        Check if the given user can view this thing.
+        Returns True if user is owner or is invited to a collection containing this thing.
+        """
+        if self.is_owner(user_code):
+            return True
+
+        # Import here to avoid circular import
+        from core.models import Collection
+
+        # Check if thing is in any collection where user is invited
+        # Using Python-side filtering for SQLite compatibility
+        for collection in Collection.objects.all():
+            if (
+                self.thing_code in collection.collection_articles
+                and user_code in collection.collection_invites
+            ):
+                return True
+        return False

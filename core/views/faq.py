@@ -36,6 +36,13 @@ class ThingFAQListView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # Check if user can view the thing
+        if not thing.can_view(request.user.user_code):
+            return Response(
+                {"error": "Not authorized to view this thing's FAQs"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         # Get visible FAQs (or all if owner)
         if thing.is_owner(request.user.user_code):
             faqs = FAQ.objects.filter(faq_thing=thing_code)
@@ -51,6 +58,13 @@ class ThingFAQListView(APIView):
             return Response(
                 {"error": "Thing not found"},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Check if user can view the thing (must be able to view to ask questions)
+        if not thing.can_view(request.user.user_code):
+            return Response(
+                {"error": "Not authorized to ask questions about this thing"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = FAQCreateSerializer(data=request.data)
@@ -88,21 +102,33 @@ class FAQDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check visibility
+        # Get the thing to check access
+        try:
+            thing = Thing.objects.get(thing_code=faq.faq_thing)
+        except Thing.DoesNotExist:
+            return Response(
+                {"error": "Thing not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Check if user can view the thing
+        if not thing.can_view(request.user.user_code):
+            return Response(
+                {"error": "Not authorized to view this FAQ"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Check visibility for non-owners
         if not faq.faq_is_visible:
             # Only owner of thing or questioner can see hidden FAQs
-            try:
-                thing = Thing.objects.get(thing_code=faq.faq_thing)
-                if (
-                    not thing.is_owner(request.user.user_code)
-                    and faq.faq_questioner != request.user.user_code
-                ):
-                    return Response(
-                        {"error": "FAQ not found"},
-                        status=status.HTTP_404_NOT_FOUND,
-                    )
-            except Thing.DoesNotExist:
-                pass
+            if (
+                not thing.is_owner(request.user.user_code)
+                and faq.faq_questioner != request.user.user_code
+            ):
+                return Response(
+                    {"error": "FAQ not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
         serializer = FAQSerializer(faq)
         return Response(serializer.data)

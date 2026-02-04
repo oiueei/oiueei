@@ -14,11 +14,11 @@ class TestAuthViews:
         """Should create user and send magic link."""
         response = api_client.post(
             "/api/v1/auth/request-link/",
-            {"email": "newuser@example.com"},
+            {"email": "lala@oiueei.org"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["email"] == "newuser@example.com"
+        assert response.data["email"] == "lala@oiueei.org"
 
     def test_request_link_existing_user(self, api_client, user):
         """Should send magic link for existing user."""
@@ -63,6 +63,30 @@ class TestAuthViews:
         response = api_client.get("/api/v1/auth/me/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_logout_authenticated(self, authenticated_client):
+        """Should logout authenticated user."""
+        response = authenticated_client.post("/api/v1/auth/logout/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Successfully logged out"
+
+    def test_logout_unauthenticated(self, api_client):
+        """Should reject logout for unauthenticated user."""
+        response = api_client.post("/api/v1/auth/logout/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_logout_with_refresh_token(self, authenticated_client, user):
+        """Should logout and attempt to blacklist refresh token."""
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        refresh = RefreshToken.for_user(user)
+        response = authenticated_client.post(
+            "/api/v1/auth/logout/",
+            {"refresh": str(refresh)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Successfully logged out"
+
 
 @pytest.mark.django_db
 class TestUserViews:
@@ -74,8 +98,18 @@ class TestUserViews:
         assert response.status_code == status.HTTP_200_OK
         assert "user_email" in response.data
 
-    def test_get_other_profile(self, authenticated_client, user2):
-        """Should return public profile for other user."""
+    def test_get_other_profile_denied_for_unrelated_user(self, authenticated_client, user2):
+        """Should deny access to profile for unrelated user."""
+        response = authenticated_client.get(f"/api/v1/users/{user2.user_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_get_other_profile_allowed_when_connected(
+        self, authenticated_client, user, user2, collection
+    ):
+        """Should return public profile for connected user (invited to same collection)."""
+        # Invite user2 to user's collection
+        collection.add_invite(user2.user_code)
+
         response = authenticated_client.get(f"/api/v1/users/{user2.user_code}/")
         assert response.status_code == status.HTTP_200_OK
         assert "user_email" not in response.data
@@ -84,11 +118,11 @@ class TestUserViews:
         """Should update own profile."""
         response = authenticated_client.put(
             f"/api/v1/users/{user.user_code}/",
-            {"user_name": "New Name"},
+            {"user_name": "Lala"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["user_name"] == "New Name"
+        assert response.data["user_name"] == "Lala"
 
     def test_update_other_profile(self, authenticated_client, user2):
         """Should reject updating other user's profile."""
@@ -146,11 +180,11 @@ class TestCollectionViews:
         """Should invite user to collection."""
         response = authenticated_client.post(
             f"/api/v1/collections/{collection.collection_code}/invite/",
-            {"email": "friend@example.com"},
+            {"email": "lele@oiueei.org"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["email"] == "friend@example.com"
+        assert response.data["email"] == "lele@oiueei.org"
 
     def test_shared_collections(self, authenticated_client, user, collection, user2):
         """Should list shared collections."""
@@ -262,8 +296,206 @@ class TestFAQViews:
         """Should answer FAQ as thing owner."""
         response = authenticated_client.post(
             f"/api/v1/faq/{faq.faq_code}/answer/",
-            {"faq_answer": "Yes, it is available!"},
+            {"faq_answer": "It's not very big!"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["faq_answer"] == "Yes, it is available!"
+        assert response.data["faq_answer"] == "It's not very big!"
+
+
+@pytest.mark.django_db
+class TestSecurityRestrictions:
+    """Tests for security restrictions on resource access."""
+
+    def _get_client_for_user(self, user):
+        """Create an authenticated client for a user."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+        return client
+
+    # Collection access tests
+
+    def test_collection_access_denied_for_non_invited_user(
+        self, authenticated_client, user, user2, collection
+    ):
+        """Should deny access to collection for non-invited user."""
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/collections/{collection.collection_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_collection_access_allowed_for_owner(self, authenticated_client, collection):
+        """Should allow owner to view their collection."""
+        response = authenticated_client.get(f"/api/v1/collections/{collection.collection_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_collection_access_allowed_for_invited_user(self, user, user2, collection):
+        """Should allow invited user to view collection."""
+        # Invite user2
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/collections/{collection.collection_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    # Invited collections endpoint tests
+
+    def test_invited_collections_empty_when_no_invites(self, authenticated_client):
+        """Should return empty list when user has no invites."""
+        response = authenticated_client.get("/api/v1/invited-collections/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_invited_collections_returns_invited(self, user, user2, collection):
+        """Should return collections user is invited to."""
+        # Invite user2
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get("/api/v1/invited-collections/")
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["collection_code"] == collection.collection_code
+
+    # Thing access tests
+
+    def test_thing_access_denied_for_non_invited_user(self, user, user2, thing):
+        """Should deny access to thing for non-invited user."""
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_thing_access_allowed_for_owner(self, authenticated_client, thing):
+        """Should allow owner to view their thing."""
+        response = authenticated_client.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_thing_access_allowed_for_invited_user(self, user, user2, thing, collection):
+        """Should allow invited user to view thing in collection."""
+        # Invite user2 to collection that contains the thing
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    # Invited things endpoint tests
+
+    def test_invited_things_empty_when_no_invites(self, authenticated_client):
+        """Should return empty list when user has no invites."""
+        response = authenticated_client.get("/api/v1/invited-things/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
+
+    def test_invited_things_returns_invited(self, user, user2, thing, collection):
+        """Should return things from collections user is invited to."""
+        # Invite user2
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get("/api/v1/invited-things/")
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["thing_code"] == thing.thing_code
+
+    # FAQ access tests
+
+    def test_faq_list_denied_for_non_invited_user(self, user, user2, thing):
+        """Should deny FAQ list for non-invited user."""
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/faq/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_faq_list_allowed_for_invited_user(self, user, user2, thing, collection, faq):
+        """Should allow FAQ list for invited user."""
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/faq/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_faq_detail_denied_for_non_invited_user(self, user, user2, faq, thing):
+        """Should deny FAQ detail for non-invited user."""
+        # Make FAQ visible first
+        faq.faq_is_visible = True
+        faq.save()
+
+        # Create a third user (not owner, not questioner, not invited)
+        from core.models import User
+
+        user3 = User.objects.create(
+            user_code="TEST03",
+            user_email="test3@example.com",
+            user_name="Test User 3",
+        )
+
+        client3 = self._get_client_for_user(user3)
+        response = client3.get(f"/api/v1/faq/{faq.faq_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_faq_create_denied_for_non_invited_user(self, user, user2, thing):
+        """Should deny FAQ creation for non-invited user."""
+        # Create a third user
+        from core.models import User
+
+        user3 = User.objects.create(
+            user_code="TEST03",
+            user_email="test3@example.com",
+            user_name="Test User 3",
+        )
+
+        client3 = self._get_client_for_user(user3)
+        response = client3.post(
+            f"/api/v1/things/{thing.thing_code}/faq/",
+            {"faq_question": "Is this available?"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # User profile access tests
+
+    def test_user_profile_access_denied_for_unrelated_user(self, user, user2):
+        """Should deny profile access for unrelated user."""
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/users/{user.user_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_user_profile_access_allowed_for_self(self, authenticated_client, user):
+        """Should allow viewing own profile."""
+        response = authenticated_client.get(f"/api/v1/users/{user.user_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_user_profile_access_allowed_when_invited_to_their_collection(
+        self, user, user2, collection
+    ):
+        """Should allow profile access when invited to their collection."""
+        # User invites user2 to their collection
+        collection.add_invite(user2.user_code)
+
+        # User2 can now see user's profile (owner of collection they're invited to)
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/users/{user.user_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_user_profile_access_allowed_when_they_invited_to_your_collection(
+        self, user, user2, theeeme
+    ):
+        """Should allow profile access when user is in your collection_invites."""
+        from core.models import Collection
+
+        # User2 creates a collection and invites user
+        coll2 = Collection.objects.create(
+            collection_code="COLL02",
+            collection_owner=user2.user_code,
+            collection_headline="User2 Collection",
+            collection_theeeme=theeeme,
+        )
+        coll2.add_invite(user.user_code)
+
+        # User can now see user2's profile (they invited me)
+        client1 = self._get_client_for_user(user)
+        response = client1.get(f"/api/v1/users/{user2.user_code}/")
+        assert response.status_code == status.HTTP_200_OK
