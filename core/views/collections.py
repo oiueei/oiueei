@@ -9,10 +9,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import Collection, Theeeme, User
+from core.models import RSVP, Collection, Theeeme, Thing, User
 from core.serializers import (
+    CollectionAddThingSerializer,
     CollectionCreateSerializer,
     CollectionInviteSerializer,
+    CollectionRemoveInviteSerializer,
     CollectionSerializer,
     CollectionUpdateSerializer,
 )
@@ -66,6 +68,9 @@ class CollectionDetailView(APIView):
     GET /api/v1/collections/{collection_code}/
     View a collection.
 
+    POST /api/v1/collections/{collection_code}/
+    Add a thing to a collection (owner only).
+
     PUT /api/v1/collections/{collection_code}/
     Update a collection (owner only).
 
@@ -97,6 +102,56 @@ class CollectionDetailView(APIView):
 
         serializer = CollectionSerializer(collection)
         return Response(serializer.data)
+
+    def post(self, request, collection_code):
+        """Add a thing to the collection."""
+        collection = self.get_collection(collection_code)
+        if not collection:
+            return Response(
+                {"error": "Collection not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not collection.is_owner(request.user.user_code):
+            return Response(
+                {"error": "Only the owner can add things to this collection"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = CollectionAddThingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        thing_code = serializer.validated_data["thing_code"]
+
+        try:
+            thing = Thing.objects.get(thing_code=thing_code)
+        except Thing.DoesNotExist:
+            return Response(
+                {"error": "Thing not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not thing.is_owner(request.user.user_code):
+            return Response(
+                {"error": "You can only add your own things to collections"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if thing_code in collection.collection_articles:
+            return Response(
+                {"error": "Thing is already in this collection"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        collection.add_thing(thing_code)
+
+        return Response(
+            {
+                "message": "Thing added to collection",
+                "collection": CollectionSerializer(collection).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def put(self, request, collection_code):
         collection = self.get_collection(collection_code)
@@ -145,6 +200,9 @@ class CollectionInviteView(APIView):
     """
     POST /api/v1/collections/{collection_code}/invite/
     Invite a user to a collection.
+
+    DELETE /api/v1/collections/{collection_code}/invite/
+    Remove a user from the collection's invite list.
     """
 
     permission_classes = [IsAuthenticated]
@@ -175,29 +233,30 @@ class CollectionInviteView(APIView):
             defaults={"user_email": email},
         )
 
-        # Add to collection invites
-        collection.add_invite(invited_user.user_code)
+        # Create RSVP with collection_code (invitation pending acceptance)
+        rsvp = RSVP.objects.create(
+            user_code=invited_user.user_code,
+            user_email=email,
+            collection_code=collection_code,
+        )
 
-        # Add to user's shared collections
-        if collection_code not in invited_user.user_shared_collections:
-            invited_user.user_shared_collections.append(collection_code)
-            invited_user.save(update_fields=["user_shared_collections"])
-
-        # Send invitation email
+        # Send invitation email with specific RSVP link
         magic_link_base = getattr(
             settings, "MAGIC_LINK_BASE_URL", "http://localhost:3000/magic-link"
         )
+        invite_link = f"{magic_link_base}/{rsvp.rsvp_code}"
 
         send_mail(
             subject=f"{request.user.user_name or 'Someone'} te ha invitado a una colección",
-            message=f"Has sido invitado a ver: {collection.collection_headline}",
+            message=f"Has sido invitado a ver: {collection.collection_headline}. "
+            f"Accede aquí: {invite_link}",
             from_email=None,
             recipient_list=[email],
             html_message=f"""
             <html>
             <p>{request.user.user_name or 'Someone'} te ha invitado a ver:</p>
             <p><strong>{collection.collection_headline}</strong></p>
-            <p>Accede para verlo: <a href="{magic_link_base}">{magic_link_base}</a></p>
+            <p><a href="{invite_link}">Aceptar invitación</a></p>
             </html>
             """,
         )
@@ -211,20 +270,52 @@ class CollectionInviteView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    def delete(self, request, collection_code):
+        try:
+            collection = Collection.objects.get(collection_code=collection_code)
+        except Collection.DoesNotExist:
+            return Response(
+                {"error": "Collection not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-class SharedCollectionsView(APIView):
-    """
-    GET /api/v1/collections/shared/
-    List collections shared with the current user.
-    """
+        if not collection.is_owner(request.user.user_code):
+            return Response(
+                {"error": "Only the owner can remove invites"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-    permission_classes = [IsAuthenticated]
+        serializer = CollectionRemoveInviteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-    def get(self, request):
-        shared_codes = request.user.user_shared_collections
-        collections = Collection.objects.filter(collection_code__in=shared_codes)
-        serializer = CollectionSerializer(collections, many=True)
-        return Response(serializer.data)
+        user_code = serializer.validated_data["user_code"]
+
+        if user_code not in collection.collection_invites:
+            return Response(
+                {"error": "User is not invited to this collection"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Remove from collection_invites
+        collection.collection_invites.remove(user_code)
+        collection.save(update_fields=["collection_invites"])
+
+        # Remove from user's shared_collections
+        try:
+            user = User.objects.get(user_code=user_code)
+            if collection_code in user.user_shared_collections:
+                user.user_shared_collections.remove(collection_code)
+                user.save(update_fields=["user_shared_collections"])
+        except User.DoesNotExist:
+            pass
+
+        return Response(
+            {
+                "message": "User removed from collection",
+                "user_code": user_code,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class InvitedCollectionsView(APIView):

@@ -19,6 +19,7 @@ class RSVP(models.Model):
     rsvp_created = models.DateTimeField(default=timezone.now)
     user_code = models.CharField(max_length=6)
     user_email = models.CharField(max_length=64)
+    collection_code = models.CharField(max_length=6, null=True, blank=True)
 
     class Meta:
         app_label = "core"

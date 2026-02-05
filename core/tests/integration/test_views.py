@@ -186,15 +186,255 @@ class TestCollectionViews:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["email"] == "lele@oiueei.org"
 
-    def test_shared_collections(self, authenticated_client, user, collection, user2):
-        """Should list shared collections."""
-        # Share collection with user
-        collection.add_invite(user.user_code)
-        user.user_shared_collections.append(collection.collection_code)
-        user.save()
+    def test_invite_to_collection_denied_for_non_owner(self, user, user2, collection):
+        """Should deny invite for non-owner of collection."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
 
-        response = authenticated_client.get("/api/v1/collections/shared/")
+        # user2 is NOT the owner of collection
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"email": "someone@oiueei.org"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the owner can invite users"
+
+    def test_invited_collections(self, authenticated_client, user, collection, user2):
+        """Should list collections where user is invited."""
+        # Add user to collection invites
+        collection.add_invite(user.user_code)
+
+        response = authenticated_client.get("/api/v1/invited-collections/")
         assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["collection_code"] == collection.collection_code
+
+    def test_invite_creates_rsvp_with_collection_code(self, authenticated_client, collection):
+        """Should create RSVP with collection_code when inviting."""
+        from core.models import RSVP
+
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"email": "newuser@oiueei.org"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify RSVP was created with collection_code
+        rsvp = RSVP.objects.filter(user_email="newuser@oiueei.org").first()
+        assert rsvp is not None
+        assert rsvp.collection_code == collection.collection_code
+
+    def test_invite_does_not_add_user_to_collection_immediately(
+        self, authenticated_client, collection
+    ):
+        """User should NOT be in collection_invites until they accept."""
+        from core.models import User
+
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"email": "pending@oiueei.org"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # User should NOT be in collection_invites yet
+        invited_user = User.objects.get(user_email="pending@oiueei.org")
+        collection.refresh_from_db()
+        assert invited_user.user_code not in collection.collection_invites
+
+    def test_verify_invite_link_adds_user_to_collection(self, api_client, collection):
+        """Verifying invite RSVP should add user to collection."""
+        from core.models import RSVP, User
+
+        # Create a user and RSVP with collection_code
+        invited_user = User.objects.create(
+            user_code="INVTD1",
+            user_email="invited@oiueei.org",
+        )
+        rsvp = RSVP.objects.create(
+            user_code=invited_user.user_code,
+            user_email=invited_user.user_email,
+            collection_code=collection.collection_code,
+        )
+
+        # Verify the link
+        response = api_client.get(f"/api/v1/auth/verify/{rsvp.rsvp_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+        # User should now be in collection_invites
+        collection.refresh_from_db()
+        invited_user.refresh_from_db()
+        assert invited_user.user_code in collection.collection_invites
+        assert collection.collection_code in invited_user.user_shared_collections
+
+        # Response should include invited_collection
+        assert response.data["invited_collection"] == collection.collection_code
+
+    def test_remove_invite_from_collection(self, authenticated_client, user, user2, collection):
+        """Should remove a user from collection invites."""
+        # First add user2 to collection invites
+        collection.add_invite(user2.user_code)
+        user2.user_shared_collections.append(collection.collection_code)
+        user2.save()
+
+        response = authenticated_client.delete(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"user_code": user2.user_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "User removed from collection"
+
+        # Verify user was removed
+        collection.refresh_from_db()
+        user2.refresh_from_db()
+        assert user2.user_code not in collection.collection_invites
+        assert collection.collection_code not in user2.user_shared_collections
+
+    def test_remove_invite_denied_for_non_owner(self, user, user2, collection):
+        """Should deny removing invite for non-owner."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        collection.add_invite(user2.user_code)
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.delete(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"user_code": user2.user_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the owner can remove invites"
+
+    def test_remove_invite_user_not_invited(self, authenticated_client, user2, collection):
+        """Should return error when user is not invited."""
+        response = authenticated_client.delete(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"user_code": user2.user_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "User is not invited to this collection"
+
+    def test_add_thing_to_collection(self, authenticated_client, user, collection):
+        """Should add an existing thing to a collection."""
+        from core.models import Thing
+
+        # Create a thing not in any collection
+        thing = Thing.objects.create(
+            thing_code="THING2",
+            thing_owner=user.user_code,
+            thing_headline="New Thing",
+            thing_type="GIFT_ARTICLE",
+        )
+
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"thing_code": thing.thing_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Thing added to collection"
+        assert thing.thing_code in response.data["collection"]["collection_articles"]
+
+    def test_add_thing_to_collection_denied_for_non_owner(self, user, user2, collection):
+        """Should deny adding thing for non-owner of collection."""
+        from core.models import Thing
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        # Create thing owned by user2
+        thing = Thing.objects.create(
+            thing_code="THING2",
+            thing_owner=user2.user_code,
+            thing_headline="User2 Thing",
+            thing_type="GIFT_ARTICLE",
+        )
+
+        # user2 tries to add to user's collection
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"thing_code": thing.thing_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the owner can add things to this collection"
+
+    def test_add_other_users_thing_to_collection_denied(
+        self, authenticated_client, user, user2, collection
+    ):
+        """Should deny adding another user's thing to collection."""
+        from core.models import Thing
+
+        # Create thing owned by user2
+        thing = Thing.objects.create(
+            thing_code="THING2",
+            thing_owner=user2.user_code,
+            thing_headline="User2 Thing",
+            thing_type="GIFT_ARTICLE",
+        )
+
+        # user (owner of collection) tries to add user2's thing
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"thing_code": thing.thing_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "You can only add your own things to collections"
+
+    def test_add_thing_already_in_collection(self, authenticated_client, thing, collection):
+        """Should return error when thing is already in collection."""
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"thing_code": thing.thing_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Thing is already in this collection"
+
+    def test_add_nonexistent_thing_to_collection(self, authenticated_client, collection):
+        """Should return 404 for nonexistent thing."""
+        response = authenticated_client.post(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"thing_code": "NOEXST"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["error"] == "Thing not found"
+
+    def test_add_thing_to_nonexistent_collection(self, authenticated_client, user):
+        """Should return 404 for nonexistent collection."""
+        from core.models import Thing
+
+        thing = Thing.objects.create(
+            thing_code="THING2",
+            thing_owner=user.user_code,
+            thing_headline="New Thing",
+            thing_type="GIFT_ARTICLE",
+        )
+
+        response = authenticated_client.post(
+            "/api/v1/collections/NOEXST/",
+            {"thing_code": thing.thing_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["error"] == "Collection not found"
 
 
 @pytest.mark.django_db
@@ -301,6 +541,24 @@ class TestFAQViews:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["faq_answer"] == "It's not very big!"
+
+    def test_answer_faq_denied_for_non_owner(self, user, user2, faq):
+        """Should deny answering FAQ for non-owner of the thing."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        # user2 is the questioner but NOT the thing owner
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(
+            f"/api/v1/faq/{faq.faq_code}/answer/",
+            {"faq_answer": "I shouldn't be able to answer this!"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the thing owner can answer questions"
 
 
 @pytest.mark.django_db
@@ -499,3 +757,162 @@ class TestSecurityRestrictions:
         client1 = self._get_client_for_user(user)
         response = client1.get(f"/api/v1/users/{user2.user_code}/")
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestReservationViews:
+    """Tests for reservation request flow."""
+
+    def _get_client_for_user(self, user):
+        """Create an authenticated client for a user."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+        return client
+
+    def test_request_reservation(self, user, user2, thing, collection):
+        """Should create a reservation request and change thing status to TAKEN."""
+        # Invite user2 to collection
+        collection.add_invite(user2.user_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Reservation request sent"
+        assert "reservation_code" in response.data
+
+        # Verify thing status changed to TAKEN
+        thing.refresh_from_db()
+        assert thing.thing_status == "TAKEN"
+
+    def test_request_reservation_denied_for_owner(self, authenticated_client, thing):
+        """Should deny owner from requesting their own thing."""
+        response = authenticated_client.post(f"/api/v1/things/{thing.thing_code}/request/")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Cannot request your own thing"
+
+    def test_request_reservation_denied_for_non_invited(self, user, user2, thing):
+        """Should deny non-invited user from requesting."""
+        client2 = self._get_client_for_user(user2)
+        response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_request_reservation_denied_for_non_active_thing(self, user, user2, thing, collection):
+        """Should deny request for non-active thing."""
+        collection.add_invite(user2.user_code)
+        thing.thing_status = "TAKEN"
+        thing.save()
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Thing is not available for reservation"
+
+    def test_accept_reservation(self, api_client, user, user2, thing, collection):
+        """Should accept reservation and change thing status to INACTIVE."""
+        from core.models import ReservationRequest
+
+        collection.add_invite(user2.user_code)
+
+        # Create reservation request
+        reservation = ReservationRequest.objects.create(
+            thing_code=thing.thing_code,
+            requester_code=user2.user_code,
+            requester_email=user2.user_email,
+            owner_code=user.user_code,
+        )
+        thing.thing_status = "TAKEN"
+        thing.save()
+
+        # Accept via link
+        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/accept/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Reservation accepted"
+
+        # Verify thing status and reservation status
+        thing.refresh_from_db()
+        reservation.refresh_from_db()
+        assert thing.thing_status == "INACTIVE"
+        assert thing.thing_available is False
+        assert user2.user_code in thing.thing_deal
+        assert reservation.status == "ACCEPTED"
+
+    def test_reject_reservation(self, api_client, user, user2, thing, collection):
+        """Should reject reservation and change thing status back to ACTIVE."""
+        from core.models import ReservationRequest
+
+        collection.add_invite(user2.user_code)
+
+        # Create reservation request
+        reservation = ReservationRequest.objects.create(
+            thing_code=thing.thing_code,
+            requester_code=user2.user_code,
+            requester_email=user2.user_email,
+            owner_code=user.user_code,
+        )
+        thing.thing_status = "TAKEN"
+        thing.save()
+
+        # Reject via link
+        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/reject/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Reservation rejected"
+
+        # Verify thing status and reservation status
+        thing.refresh_from_db()
+        reservation.refresh_from_db()
+        assert thing.thing_status == "ACTIVE"
+        assert reservation.status == "REJECTED"
+
+    def test_reservation_expired(self, api_client, user, user2, thing):
+        """Should return error for expired reservation."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.models import ReservationRequest
+
+        # Create expired reservation
+        reservation = ReservationRequest.objects.create(
+            thing_code=thing.thing_code,
+            requester_code=user2.user_code,
+            requester_email=user2.user_email,
+            owner_code=user.user_code,
+        )
+        reservation.reservation_created = timezone.now() - timedelta(hours=100)
+        reservation.save()
+
+        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/accept/")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Reservation expired or already processed"
+
+    def test_duplicate_request_denied(self, user, user2, thing, collection):
+        """Should deny duplicate pending request."""
+        from core.models import ReservationRequest
+
+        collection.add_invite(user2.user_code)
+
+        # Create existing pending request
+        ReservationRequest.objects.create(
+            thing_code=thing.thing_code,
+            requester_code=user2.user_code,
+            requester_email=user2.user_email,
+            owner_code=user.user_code,
+            status="PENDING",
+        )
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "You already have a pending request for this thing"

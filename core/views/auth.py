@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import RSVP, User
+from core.models import RSVP, Collection, User
 from core.serializers import RequestLinkSerializer, UserSerializer
 
 
@@ -103,6 +103,21 @@ class VerifyLinkView(APIView):
         # Update last activity
         user.update_last_activity()
 
+        # Process collection invitation if present
+        invited_collection = None
+        if rsvp.collection_code:
+            try:
+                collection = Collection.objects.get(collection_code=rsvp.collection_code)
+                # Add user to collection invites
+                collection.add_invite(user.user_code)
+                # Add collection to user's shared collections
+                if rsvp.collection_code not in user.user_shared_collections:
+                    user.user_shared_collections.append(rsvp.collection_code)
+                    user.save(update_fields=["user_shared_collections"])
+                invited_collection = rsvp.collection_code
+            except Collection.DoesNotExist:
+                pass  # Collection was deleted, ignore
+
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
 
@@ -115,14 +130,17 @@ class VerifyLinkView(APIView):
         # Return token and user data
         user_data = UserSerializer(user).data
 
-        return Response(
-            {
-                "token": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user": user_data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        response_data = {
+            "token": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": user_data,
+        }
+
+        # Include invited collection if this was a collection invite
+        if invited_collection:
+            response_data["invited_collection"] = invited_collection
+
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class MeView(APIView):

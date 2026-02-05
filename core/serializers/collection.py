@@ -95,3 +95,15 @@ class CollectionInviteSerializer(serializers.Serializer):
     """Serializer for inviting a user to a collection."""
 
     email = serializers.EmailField(max_length=64)
+
+
+class CollectionAddThingSerializer(serializers.Serializer):
+    """Serializer for adding a thing to a collection."""
+
+    thing_code = serializers.CharField(max_length=6)
+
+
+class CollectionRemoveInviteSerializer(serializers.Serializer):
+    """Serializer for removing a user from a collection's invite list."""
+
+    user_code = serializers.CharField(max_length=6)

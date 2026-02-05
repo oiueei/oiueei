@@ -160,11 +160,18 @@ class TestShareCollectionFlow:
         )
         assert response.status_code == status.HTTP_200_OK
 
+        # Step 3.5: Friend accepts invitation by verifying RSVP
+        from core.models import RSVP
+
+        rsvp = RSVP.objects.get(user_email="friend@example.com")
+        response = client.get(f"/api/v1/auth/verify/{rsvp.rsvp_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
         # Step 4: Friend views shared collections
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {friend_token.access_token}")
         friend.refresh_from_db()
 
-        response = client.get("/api/v1/collections/shared/")
+        response = client.get("/api/v1/invited-collections/")
         assert response.status_code == status.HTTP_200_OK
         assert any(c["collection_code"] == collection_code for c in response.data)
 
@@ -240,6 +247,10 @@ class TestFAQFlow:
             {"email": "friend2@example.com"},
             format="json",
         )
+
+        # Friend accepts invitation by verifying RSVP
+        rsvp = RSVP.objects.get(user_email="friend2@example.com")
+        client.get(f"/api/v1/auth/verify/{rsvp.rsvp_code}/")
 
         # Step 1: Friend asks question
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {friend_token.access_token}")
@@ -352,13 +363,21 @@ class TestCompleteUserJourney:
         )
         charlie = User.objects.get(user_email="charlie@example.com")
 
+        # === Bob and Charlie accept invitations ===
+
+        bob_rsvp = RSVP.objects.get(user_email="bob@example.com")
+        client.get(f"/api/v1/auth/verify/{bob_rsvp.rsvp_code}/")
+
+        charlie_rsvp = RSVP.objects.get(user_email="charlie@example.com")
+        client.get(f"/api/v1/auth/verify/{charlie_rsvp.rsvp_code}/")
+
         # === Bob logs in and reserves an item ===
 
         bob_token = RefreshToken.for_user(bob)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {bob_token.access_token}")
 
         # Bob views shared collections
-        response = client.get("/api/v1/collections/shared/")
+        response = client.get("/api/v1/invited-collections/")
         assert len(response.data) == 1
 
         # Bob reserves headphones

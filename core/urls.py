@@ -10,9 +10,13 @@ from .views.collections import (
     CollectionInviteView,
     CollectionListView,
     InvitedCollectionsView,
-    SharedCollectionsView,
 )
 from .views.faq import FAQAnswerView, FAQDetailView, ThingFAQListView
+from .views.reservations import (
+    ReservationAcceptView,
+    ReservationRejectView,
+    ThingRequestView,
+)
 from .views.things import (
     InvitedThingsView,
     ThingDetailView,
@@ -32,7 +36,6 @@ urlpatterns = [
     path("users/<str:user_code>/", UserDetailView.as_view(), name="user-detail"),
     # Collections
     path("collections/", CollectionListView.as_view(), name="collection-list"),
-    path("collections/shared/", SharedCollectionsView.as_view(), name="shared-collections"),
     path(
         "invited-collections/",
         InvitedCollectionsView.as_view(),
@@ -54,6 +57,18 @@ urlpatterns = [
     path("things/<str:thing_code>/", ThingDetailView.as_view(), name="thing-detail"),
     path("things/<str:thing_code>/reserve/", ThingReserveView.as_view(), name="thing-reserve"),
     path("things/<str:thing_code>/release/", ThingReleaseView.as_view(), name="thing-release"),
+    path("things/<str:thing_code>/request/", ThingRequestView.as_view(), name="thing-request"),
+    # Reservations
+    path(
+        "reservations/<str:reservation_code>/accept/",
+        ReservationAcceptView.as_view(),
+        name="reservation-accept",
+    ),
+    path(
+        "reservations/<str:reservation_code>/reject/",
+        ReservationRejectView.as_view(),
+        name="reservation-reject",
+    ),
     # FAQ
     path("things/<str:thing_code>/faq/", ThingFAQListView.as_view(), name="thing-faq-list"),
     path("faq/<str:faq_code>/", FAQDetailView.as_view(), name="faq-detail"),

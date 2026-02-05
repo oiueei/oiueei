@@ -3,7 +3,7 @@ from .collections import (
     CollectionDetailView,
     CollectionInviteView,
     CollectionListView,
-    SharedCollectionsView,
+    InvitedCollectionsView,
 )
 from .faq import FAQAnswerView, FAQDetailView, ThingFAQListView
 from .things import ThingDetailView, ThingListView, ThingReleaseView, ThingReserveView
@@ -17,7 +17,7 @@ __all__ = [
     "CollectionListView",
     "CollectionDetailView",
     "CollectionInviteView",
-    "SharedCollectionsView",
+    "InvitedCollectionsView",
     "ThingListView",
     "ThingDetailView",
     "ThingReserveView",

@@ -1,7 +1,9 @@
 from .auth import AuthResponseSerializer, RequestLinkSerializer
 from .collection import (
+    CollectionAddThingSerializer,
     CollectionCreateSerializer,
     CollectionInviteSerializer,
+    CollectionRemoveInviteSerializer,
     CollectionSerializer,
     CollectionUpdateSerializer,
 )
@@ -19,6 +21,8 @@ __all__ = [
     "CollectionCreateSerializer",
     "CollectionUpdateSerializer",
     "CollectionInviteSerializer",
+    "CollectionAddThingSerializer",
+    "CollectionRemoveInviteSerializer",
     "ThingSerializer",
     "ThingCreateSerializer",
     "ThingUpdateSerializer",
