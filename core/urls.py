@@ -5,6 +5,13 @@ URL configuration for core app.
 from django.urls import path
 
 from .views.auth import LogoutView, MeView, RequestLinkView, VerifyLinkView
+from .views.booking import (
+    BookingAcceptView,
+    BookingRejectView,
+    MyBookingsView,
+    OwnerBookingsView,
+    ThingCalendarView,
+)
 from .views.collections import (
     CollectionDetailView,
     CollectionInviteView,
@@ -12,11 +19,7 @@ from .views.collections import (
     InvitedCollectionsView,
 )
 from .views.faq import FAQAnswerView, FAQDetailView, ThingFAQListView
-from .views.reservations import (
-    ReservationAcceptView,
-    ReservationRejectView,
-    ThingRequestView,
-)
+from .views.reservations import ReservationAcceptView, ReservationRejectView, ThingRequestView
 from .views.things import (
     InvitedThingsView,
     ThingDetailView,
@@ -58,7 +61,12 @@ urlpatterns = [
     path("things/<str:thing_code>/reserve/", ThingReserveView.as_view(), name="thing-reserve"),
     path("things/<str:thing_code>/release/", ThingReleaseView.as_view(), name="thing-release"),
     path("things/<str:thing_code>/request/", ThingRequestView.as_view(), name="thing-request"),
-    # Reservations
+    path(
+        "things/<str:thing_code>/calendar/",
+        ThingCalendarView.as_view(),
+        name="thing-calendar",
+    ),
+    # Reservations (standard flow for GIFT/SELL/ORDER)
     path(
         "reservations/<str:reservation_code>/accept/",
         ReservationAcceptView.as_view(),
@@ -69,6 +77,19 @@ urlpatterns = [
         ReservationRejectView.as_view(),
         name="reservation-reject",
     ),
+    # Bookings (date-based flow for LEND/RENT/SHARE)
+    path(
+        "bookings/<str:booking_code>/accept/",
+        BookingAcceptView.as_view(),
+        name="booking-accept",
+    ),
+    path(
+        "bookings/<str:booking_code>/reject/",
+        BookingRejectView.as_view(),
+        name="booking-reject",
+    ),
+    path("my-bookings/", MyBookingsView.as_view(), name="my-bookings"),
+    path("owner-bookings/", OwnerBookingsView.as_view(), name="owner-bookings"),
     # FAQ
     path("things/<str:thing_code>/faq/", ThingFAQListView.as_view(), name="thing-faq-list"),
     path("faq/<str:faq_code>/", FAQDetailView.as_view(), name="faq-detail"),

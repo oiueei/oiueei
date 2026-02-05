@@ -349,9 +349,10 @@ class TestCollectionViews:
 
     def test_add_thing_to_collection_denied_for_non_owner(self, user, user2, collection):
         """Should deny adding thing for non-owner of collection."""
-        from core.models import Thing
         from rest_framework.test import APIClient
         from rest_framework_simplejwt.tokens import RefreshToken
+
+        from core.models import Thing
 
         # Create thing owned by user2
         thing = Thing.objects.create(

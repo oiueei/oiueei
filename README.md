@@ -2,7 +2,7 @@
 
 ## What is OIUEEI?
 
-A web application for sharing belongings with friends. Users can create collections (wishlists, gift lists, items for sale) and share them with friends who can then reserve items or ask questions.
+An open-source web application for people to share their belongings with friends and others around. Users can create collections (wishlists, gift lists, items for sale) and share them with friends who can then reserve items or ask questions.
 
 ## Tech Stack
 
@@ -18,11 +18,12 @@ A web application for sharing belongings with friends. Users can create collecti
 |-------|---------|
 | **User** | Users with magic link auth. Custom model with `user_code` as PK (6-char alphanumeric) |
 | **Collection** | Lists of things owned by a user, can be shared via invites |
-| **Thing** | Items in collections. Types: GIFT_ARTICLE, SELL_ARTICLE, ORDER_ARTICLE |
+| **Thing** | Items in collections. Types: GIFT_ARTICLE, SELL_ARTICLE, ORDER_ARTICLE, RENT_ARTICLE, LEND_ARTICLE, SHARE_ARTICLE |
 | **FAQ** | Questions/answers about things |
 | **Theeeme** | Colour palettes (10 colours) for customising collections |
 | **RSVP** | Magic link tokens (one-time use, 24h expiry) |
-| **ReservationRequest** | Reservation requests pending owner approval (72h expiry) |
+| **ReservationRequest** | Reservation requests for GIFT/SELL/ORDER pending owner approval (72h expiry) |
+| **BookingPeriod** | Date-based booking requests for LEND/RENT/SHARE (72h expiry, allows multiple non-overlapping bookings) |
 
 ## Key Relationships
 
@@ -32,8 +33,10 @@ A web application for sharing belongings with friends. Users can create collecti
 - Collection has `collection_articles` (list of thing_codes)
 - Thing → User (owner via `thing_owner`)
 - FAQ → Thing (via `faq_thing`)
-- ReservationRequest → Thing (via `thing_code`)
+- ReservationRequest → Thing (via `thing_code`) - for GIFT/SELL/ORDER
 - ReservationRequest → User (requester via `requester_code`, owner via `owner_code`)
+- BookingPeriod → Thing (via `thing_code`) - for LEND/RENT/SHARE
+- BookingPeriod → User (requester via `requester_code`, owner via `owner_code`)
 
 ## API Endpoints
 
@@ -74,14 +77,23 @@ A web application for sharing belongings with friends. Users can create collecti
 | DELETE | `/api/v1/things/{code}/` | Delete thing (owner only) |
 | POST | `/api/v1/things/{code}/reserve/` | Reserve without approval (guest only) |
 | POST | `/api/v1/things/{code}/release/` | Release reservation |
-| POST | `/api/v1/things/{code}/request/` | Request reservation with approval (guest only) |
+| POST | `/api/v1/things/{code}/request/` | Request reservation with approval (guest only). For LEND/RENT/SHARE requires `start_date` and `end_date` |
+| GET | `/api/v1/things/{code}/calendar/` | View booking calendar (LEND/RENT/SHARE). Owner sees full details, guest sees only blocked dates |
 | GET | `/api/v1/invited-things/` | List things from invited collections (guest only) |
 
-### Reservations
+### Reservations (GIFT/SELL/ORDER)
 | Method | URL | Description |
 |--------|-----|-------------|
 | GET | `/api/v1/reservations/{code}/accept/` | Accept reservation (via email) |
 | GET | `/api/v1/reservations/{code}/reject/` | Reject reservation (via email) |
+
+### Bookings (LEND/RENT/SHARE)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET | `/api/v1/bookings/{code}/accept/` | Accept booking (via email) |
+| GET | `/api/v1/bookings/{code}/reject/` | Reject booking (via email) |
+| GET | `/api/v1/my-bookings/` | List my booking requests |
+| GET | `/api/v1/owner-bookings/` | List bookings for my things (owner only) |
 
 ### FAQ
 | Method | URL | Description |
@@ -117,7 +129,7 @@ python manage.py createsuperuser
 
 ## Default Data
 
-- Default Theeeme: "Barcelona" (code: BRCLON) - greyscale palette
+- Default Theeeme: "Barcelona"
 
 ## Important Notes
 

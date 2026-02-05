@@ -10,13 +10,16 @@ from core.utils import generate_id
 
 class Thing(models.Model):
     """
-    An item in a collection (gift, sale item, or order).
+    An item in a collection (gift, sale, order, rent, lend, or share).
     """
 
     TYPE_CHOICES = [
         ("GIFT_ARTICLE", "Gift Article"),
         ("SELL_ARTICLE", "Sell Article"),
         ("ORDER_ARTICLE", "Order Article"),
+        ("RENT_ARTICLE", "Rent Article"),
+        ("LEND_ARTICLE", "Lend Article"),
+        ("SHARE_ARTICLE", "Share Article"),
     ]
 
     STATUS_CHOICES = [

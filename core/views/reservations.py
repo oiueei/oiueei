@@ -10,12 +10,20 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.models import ReservationRequest, Thing, User
+from core.models.booking import BookingPeriod
+from core.serializers.booking import ThingRequestWithDatesSerializer
+
+# Thing types that use date-based booking
+DATE_BASED_TYPES = ["LEND_ARTICLE", "RENT_ARTICLE", "SHARE_ARTICLE"]
 
 
 class ThingRequestView(APIView):
     """
     POST /api/v1/things/{thing_code}/request/
     Request a reservation for a thing.
+
+    For LEND/RENT/SHARE: requires start_date and end_date, creates BookingPeriod
+    For GIFT/SELL/ORDER: uses existing ReservationRequest flow
     """
 
     permission_classes = [IsAuthenticated]
@@ -50,9 +58,94 @@ class ThingRequestView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Bifurcate by thing_type
+        if thing.thing_type in DATE_BASED_TYPES:
+            return self._handle_date_based_request(request, thing)
+        else:
+            return self._handle_standard_request(request, thing)
+
+    def _handle_date_based_request(self, request, thing):
+        """Handle LEND/RENT/SHARE requests with date-based booking."""
+        # Validate dates
+        serializer = ThingRequestWithDatesSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        start_date = serializer.validated_data["start_date"]
+        end_date = serializer.validated_data["end_date"]
+
+        # Check for overlap with existing bookings
+        if BookingPeriod.has_overlap(thing.thing_code, start_date, end_date):
+            return Response(
+                {"error": "Selected dates overlap with existing booking"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Create booking period (status=PENDING, blocks dates for 72h)
+        booking = BookingPeriod.objects.create(
+            thing_code=thing.thing_code,
+            requester_code=request.user.user_code,
+            requester_email=request.user.user_email,
+            owner_code=thing.thing_owner,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        # Get owner info
+        try:
+            owner = User.objects.get(user_code=thing.thing_owner)
+            owner_email = owner.user_email
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Thing owner not found"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Send email to owner with accept/reject links
+        base_url = getattr(settings, "BOOKING_BASE_URL", "http://localhost:3000/bookings")
+        accept_link = f"{base_url}/{booking.booking_code}/accept"
+        reject_link = f"{base_url}/{booking.booking_code}/reject"
+
+        requester_name = request.user.user_name or request.user.user_email
+
+        send_mail(
+            subject=f"{requester_name} quiere reservar: {thing.thing_headline}",
+            message=f"{requester_name} ha solicitado reservar '{thing.thing_headline}' "
+            f"del {start_date} al {end_date}. "
+            f"Aceptar: {accept_link} | Rechazar: {reject_link}",
+            from_email=None,
+            recipient_list=[owner_email],
+            html_message=f"""
+            <html>
+            <p><strong>{requester_name}</strong> ha solicitado reservar:</p>
+            <p><strong>{thing.thing_headline}</strong></p>
+            <p>Fechas: {start_date} - {end_date}</p>
+            <p>
+                <a href="{accept_link}">Aceptar reserva</a> |
+                <a href="{reject_link}">Rechazar reserva</a>
+            </p>
+            </html>
+            """,
+        )
+
+        # NOTE: Do NOT change thing_status - it stays ACTIVE for date-based types
+        # Multiple bookings can exist for different date ranges
+
+        return Response(
+            {
+                "message": "Booking request sent",
+                "booking_code": booking.booking_code,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def _handle_standard_request(self, request, thing):
+        """Handle GIFT/SELL/ORDER requests with standard reservation flow."""
         # Check if user already has a pending request for this thing
         existing = ReservationRequest.objects.filter(
-            thing_code=thing_code,
+            thing_code=thing.thing_code,
             requester_code=request.user.user_code,
             status="PENDING",
         ).first()
@@ -64,7 +157,7 @@ class ThingRequestView(APIView):
 
         # Create reservation request
         reservation = ReservationRequest.objects.create(
-            thing_code=thing_code,
+            thing_code=thing.thing_code,
             requester_code=request.user.user_code,
             requester_email=request.user.user_email,
             owner_code=thing.thing_owner,
