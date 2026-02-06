@@ -43,7 +43,7 @@ class CollectionListView(APIView):
         # Use default theeeme if not provided
         validated_data = serializer.validated_data
         if "collection_theeeme" not in validated_data:
-            default_theeeme = Theeeme.objects.filter(theeeme_code="BRCLON").first()
+            default_theeeme = Theeeme.objects.filter(theeeme_code="JMPA01").first()
             if default_theeeme:
                 validated_data["collection_theeeme"] = default_theeeme
 
@@ -137,7 +137,7 @@ class CollectionDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        if thing_code in collection.collection_articles:
+        if thing_code in collection.collection_things:
             return Response(
                 {"error": "Thing is already in this collection"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -237,6 +237,7 @@ class CollectionInviteView(APIView):
         rsvp = RSVP.objects.create(
             user_code=invited_user.user_code,
             user_email=email,
+            rsvp_action="COLLECTION_INVITE",
             collection_code=collection_code,
         )
 
@@ -303,9 +304,9 @@ class CollectionInviteView(APIView):
         # Remove from user's shared_collections
         try:
             user = User.objects.get(user_code=user_code)
-            if collection_code in user.user_shared_collections:
-                user.user_shared_collections.remove(collection_code)
-                user.save(update_fields=["user_shared_collections"])
+            if collection_code in user.user_invited_collections:
+                user.user_invited_collections.remove(collection_code)
+                user.save(update_fields=["user_invited_collections"])
         except User.DoesNotExist:
             pass
 

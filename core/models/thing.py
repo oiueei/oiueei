@@ -14,12 +14,12 @@ class Thing(models.Model):
     """
 
     TYPE_CHOICES = [
-        ("GIFT_ARTICLE", "Gift Article"),
-        ("SELL_ARTICLE", "Sell Article"),
-        ("ORDER_ARTICLE", "Order Article"),
-        ("RENT_ARTICLE", "Rent Article"),
-        ("LEND_ARTICLE", "Lend Article"),
-        ("SHARE_ARTICLE", "Share Article"),
+        ("GIFT_THING", "Gift Thing"),
+        ("SELL_THING", "Sell Thing"),
+        ("ORDER_THING", "Order Thing"),
+        ("RENT_THING", "Rent Thing"),
+        ("LEND_THING", "Lend Thing"),
+        ("SHARE_THING", "Share Thing"),
     ]
 
     STATUS_CHOICES = [
@@ -29,7 +29,7 @@ class Thing(models.Model):
     ]
 
     thing_code = models.CharField(max_length=6, primary_key=True, default=generate_id)
-    thing_type = models.CharField(max_length=16, choices=TYPE_CHOICES, default="GIFT_ARTICLE")
+    thing_type = models.CharField(max_length=16, choices=TYPE_CHOICES, default="GIFT_THING")
     thing_owner = models.CharField(max_length=6)  # FK to User.user_code
     thing_created = models.DateTimeField(default=timezone.now)
     thing_headline = models.CharField(max_length=64)
@@ -95,7 +95,7 @@ class Thing(models.Model):
         # Using Python-side filtering for SQLite compatibility
         for collection in Collection.objects.all():
             if (
-                self.thing_code in collection.collection_articles
+                self.thing_code in collection.collection_things
                 and user_code in collection.collection_invites
             ):
                 return True

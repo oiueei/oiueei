@@ -1,10 +1,13 @@
 """
 Booking views for OIUEEI lending calendar.
+
+All email action links use RSVP codes as intermediaries.
+BookingAcceptView and BookingRejectView have been removed -
+all accept/reject actions now go through the unified RSVP endpoint.
 """
 
-from django.core.mail import send_mail
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -55,128 +58,9 @@ class ThingCalendarView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class BookingAcceptView(APIView):
-    """
-    GET /api/v1/bookings/{booking_code}/accept/
-    Accept a booking request (via email link).
-    """
-
-    permission_classes = [AllowAny]
-
-    def get(self, request, booking_code):
-        try:
-            booking = BookingPeriod.objects.get(booking_code=booking_code)
-        except BookingPeriod.DoesNotExist:
-            return Response(
-                {"error": "Booking not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if not booking.is_valid():
-            return Response(
-                {"error": "Booking expired or already processed"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Get thing
-        try:
-            thing = Thing.objects.get(thing_code=booking.thing_code)
-        except Thing.DoesNotExist:
-            return Response(
-                {"error": "Thing not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # Accept the booking
-        booking.accept()
-
-        # Send confirmation email to requester
-        send_mail(
-            subject=f"Tu reserva ha sido aceptada: {thing.thing_headline}",
-            message=f"Tu solicitud de reserva para '{thing.thing_headline}' "
-            f"del {booking.start_date} al {booking.end_date} ha sido aceptada.",
-            from_email=None,
-            recipient_list=[booking.requester_email],
-            html_message=f"""
-            <html>
-            <p>Tu solicitud de reserva ha sido <strong>aceptada</strong>:</p>
-            <p><strong>{thing.thing_headline}</strong></p>
-            <p>Fechas: {booking.start_date} - {booking.end_date}</p>
-            </html>
-            """,
-        )
-
-        return Response(
-            {
-                "message": "Booking accepted",
-                "booking_code": booking.booking_code,
-                "thing_code": thing.thing_code,
-                "start_date": str(booking.start_date),
-                "end_date": str(booking.end_date),
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-class BookingRejectView(APIView):
-    """
-    GET /api/v1/bookings/{booking_code}/reject/
-    Reject a booking request (via email link).
-    """
-
-    permission_classes = [AllowAny]
-
-    def get(self, request, booking_code):
-        try:
-            booking = BookingPeriod.objects.get(booking_code=booking_code)
-        except BookingPeriod.DoesNotExist:
-            return Response(
-                {"error": "Booking not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if not booking.is_valid():
-            return Response(
-                {"error": "Booking expired or already processed"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Get thing
-        try:
-            thing = Thing.objects.get(thing_code=booking.thing_code)
-        except Thing.DoesNotExist:
-            return Response(
-                {"error": "Thing not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # Reject the booking
-        booking.reject()
-
-        # Send rejection email to requester
-        send_mail(
-            subject=f"Tu reserva ha sido rechazada: {thing.thing_headline}",
-            message=f"Tu solicitud de reserva para '{thing.thing_headline}' "
-            f"del {booking.start_date} al {booking.end_date} ha sido rechazada.",
-            from_email=None,
-            recipient_list=[booking.requester_email],
-            html_message=f"""
-            <html>
-            <p>Tu solicitud de reserva ha sido <strong>rechazada</strong>:</p>
-            <p><strong>{thing.thing_headline}</strong></p>
-            <p>Fechas: {booking.start_date} - {booking.end_date}</p>
-            </html>
-            """,
-        )
-
-        return Response(
-            {
-                "message": "Booking rejected",
-                "booking_code": booking.booking_code,
-                "thing_code": thing.thing_code,
-            },
-            status=status.HTTP_200_OK,
-        )
+# NOTE: BookingAcceptView and BookingRejectView have been removed.
+# All booking accept/reject actions now go through the unified RSVP endpoint
+# at /api/v1/rsvp/{rsvp_code}/ to avoid exposing real codes in URLs.
 
 
 class MyBookingsView(APIView):

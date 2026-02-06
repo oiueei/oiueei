@@ -135,7 +135,7 @@ class ThingDetailView(APIView):
 
         # Remove from all collections
         for collection in Collection.objects.filter(collection_owner=request.user.user_code):
-            if thing_code in collection.collection_articles:
+            if thing_code in collection.collection_things:
                 collection.remove_thing(thing_code)
 
         thing.delete()
@@ -234,7 +234,7 @@ class InvitedThingsView(APIView):
         # Collect all thing codes from those collections
         thing_codes = []
         for collection in invited_collections:
-            thing_codes.extend(collection.collection_articles)
+            thing_codes.extend(collection.collection_things)
 
         # Remove duplicates
         thing_codes = list(set(thing_codes))

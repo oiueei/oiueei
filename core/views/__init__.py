@@ -1,18 +1,12 @@
 from .auth import MeView, RequestLinkView, VerifyLinkView
-from .booking import (
-    BookingAcceptView,
-    BookingRejectView,
-    MyBookingsView,
-    OwnerBookingsView,
-    ThingCalendarView,
-)
+from .booking import MyBookingsView, OwnerBookingsView, ThingCalendarView
 from .collections import (
     CollectionDetailView,
     CollectionInviteView,
     CollectionListView,
     InvitedCollectionsView,
 )
-from .faq import FAQAnswerView, FAQDetailView, ThingFAQListView
+from .faq import FAQAnswerView, FAQDetailView, FAQVisibilityView, ThingFAQListView
 from .things import ThingDetailView, ThingListView, ThingReleaseView, ThingReserveView
 from .users import UserDetailView
 
@@ -32,9 +26,8 @@ __all__ = [
     "ThingFAQListView",
     "FAQDetailView",
     "FAQAnswerView",
+    "FAQVisibilityView",
     "ThingCalendarView",
-    "BookingAcceptView",
-    "BookingRejectView",
     "MyBookingsView",
     "OwnerBookingsView",
 ]

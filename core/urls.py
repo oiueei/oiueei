@@ -1,25 +1,22 @@
 """
 URL configuration for core app.
+
+IMPORTANT: All email action links use RSVP codes as intermediaries.
+Never expose real codes (booking_code, reservation_code, etc.) in URLs.
 """
 
 from django.urls import path
 
 from .views.auth import LogoutView, MeView, RequestLinkView, VerifyLinkView
-from .views.booking import (
-    BookingAcceptView,
-    BookingRejectView,
-    MyBookingsView,
-    OwnerBookingsView,
-    ThingCalendarView,
-)
+from .views.booking import MyBookingsView, OwnerBookingsView, ThingCalendarView
 from .views.collections import (
     CollectionDetailView,
     CollectionInviteView,
     CollectionListView,
     InvitedCollectionsView,
 )
-from .views.faq import FAQAnswerView, FAQDetailView, ThingFAQListView
-from .views.reservations import ReservationAcceptView, ReservationRejectView, ThingRequestView
+from .views.faq import FAQAnswerView, FAQDetailView, FAQVisibilityView, ThingFAQListView
+from .views.reservations import ThingRequestView
 from .views.things import (
     InvitedThingsView,
     ThingDetailView,
@@ -30,11 +27,14 @@ from .views.things import (
 from .views.users import UserDetailView
 
 urlpatterns = [
-    # Auth
+    # Auth & RSVP Actions
     path("auth/request-link/", RequestLinkView.as_view(), name="request-link"),
     path("auth/verify/<str:rsvp_code>/", VerifyLinkView.as_view(), name="verify-link"),
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
+    # RSVP action endpoint (unified handler for all email-based actions)
+    # Handles: MAGIC_LINK, COLLECTION_INVITE, RESERVATION_ACCEPT/REJECT, BOOKING_ACCEPT/REJECT
+    path("rsvp/<str:rsvp_code>/", VerifyLinkView.as_view(), name="rsvp-action"),
     # Users
     path("users/<str:user_code>/", UserDetailView.as_view(), name="user-detail"),
     # Collections
@@ -66,32 +66,23 @@ urlpatterns = [
         ThingCalendarView.as_view(),
         name="thing-calendar",
     ),
-    # Reservations (standard flow for GIFT/SELL/ORDER)
-    path(
-        "reservations/<str:reservation_code>/accept/",
-        ReservationAcceptView.as_view(),
-        name="reservation-accept",
-    ),
-    path(
-        "reservations/<str:reservation_code>/reject/",
-        ReservationRejectView.as_view(),
-        name="reservation-reject",
-    ),
-    # Bookings (date-based flow for LEND/RENT/SHARE)
-    path(
-        "bookings/<str:booking_code>/accept/",
-        BookingAcceptView.as_view(),
-        name="booking-accept",
-    ),
-    path(
-        "bookings/<str:booking_code>/reject/",
-        BookingRejectView.as_view(),
-        name="booking-reject",
-    ),
+    # Bookings
     path("my-bookings/", MyBookingsView.as_view(), name="my-bookings"),
     path("owner-bookings/", OwnerBookingsView.as_view(), name="owner-bookings"),
     # FAQ
     path("things/<str:thing_code>/faq/", ThingFAQListView.as_view(), name="thing-faq-list"),
     path("faq/<str:faq_code>/", FAQDetailView.as_view(), name="faq-detail"),
     path("faq/<str:faq_code>/answer/", FAQAnswerView.as_view(), name="faq-answer"),
+    path(
+        "faq/<str:faq_code>/hide/",
+        FAQVisibilityView.as_view(),
+        {"action": "hide"},
+        name="faq-hide",
+    ),
+    path(
+        "faq/<str:faq_code>/show/",
+        FAQVisibilityView.as_view(),
+        {"action": "show"},
+        name="faq-show",
+    ),
 ]

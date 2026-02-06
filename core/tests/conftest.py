@@ -13,19 +13,15 @@ from core.models import FAQ, RSVP, Collection, Theeeme, Thing, User
 def default_theeeme(db):
     """Create the default theeeme for all tests."""
     theeeme, _ = Theeeme.objects.get_or_create(
-        theeeme_code="BRCLON",
+        theeeme_code="JMPA01",
         defaults={
-            "theeeme_name": "Barcelona",
-            "theeeme_010": "FFFFFF",
-            "theeeme_020": "F5F5F5",
-            "theeeme_040": "E0E0E0",
-            "theeeme_060": "BDBDBD",
-            "theeeme_080": "9E9E9E",
-            "theeeme_100": "757575",
-            "theeeme_200": "616161",
-            "theeeme_400": "424242",
-            "theeeme_600": "212121",
-            "theeeme_800": "000000",
+            "theeeme_name": "BAR_CEL_ONA",
+            "theeeme_01": "FFCA2C",
+            "theeeme_02": "CB4E22",
+            "theeeme_03": "827F2A",
+            "theeeme_04": "2B9A9E",
+            "theeeme_05": "4F3B28",
+            "theeeme_06": "FFF2EB",
         },
     )
     return theeeme
@@ -108,7 +104,7 @@ def thing(db, user, collection):
     """Create a test thing."""
     t = Thing.objects.create(
         thing_code="THNG01",
-        thing_type="GIFT_ARTICLE",
+        thing_type="GIFT_THING",
         thing_owner=user.user_code,
         thing_headline="Test Thing",
     )

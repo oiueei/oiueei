@@ -18,17 +18,21 @@ class BookingPeriodSerializer(serializers.ModelSerializer):
             "booking_code",
             "booking_created",
             "thing_code",
+            "thing_type",
             "requester_code",
             "requester_email",
             "owner_code",
             "start_date",
             "end_date",
+            "delivery_date",
+            "quantity",
             "status",
         ]
         read_only_fields = [
             "booking_code",
             "booking_created",
             "thing_code",
+            "thing_type",
             "requester_code",
             "requester_email",
             "owner_code",
@@ -87,6 +91,19 @@ class ThingRequestWithDatesSerializer(serializers.Serializer):
         return data
 
 
+class ThingOrderSerializer(serializers.Serializer):
+    """Serializer for ORDER_THING requests (delivery_date + quantity)."""
+
+    delivery_date = serializers.DateField()
+    quantity = serializers.IntegerField(min_value=1)
+
+    def validate_delivery_date(self, value):
+        """Validate that delivery_date is today or in the future."""
+        if value < date.today():
+            raise serializers.ValidationError("Delivery date must be today or in the future")
+        return value
+
+
 class MyBookingSerializer(serializers.ModelSerializer):
     """Serializer for user's own booking requests."""
 
@@ -96,8 +113,11 @@ class MyBookingSerializer(serializers.ModelSerializer):
             "booking_code",
             "booking_created",
             "thing_code",
+            "thing_type",
             "owner_code",
             "start_date",
             "end_date",
+            "delivery_date",
+            "quantity",
             "status",
         ]

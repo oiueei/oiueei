@@ -41,7 +41,7 @@ class User(AbstractBaseUser):
     user_created = models.DateField(default=date.today)
     user_last_activity = models.DateField(default=date.today)
     user_own_collections = models.JSONField(default=list, blank=True)
-    user_shared_collections = models.JSONField(default=list, blank=True)
+    user_invited_collections = models.JSONField(default=list, blank=True)
     user_things = models.JSONField(default=list, blank=True)
     user_headline = models.CharField(max_length=64, blank=True, default="")
     user_thumbnail = models.CharField(max_length=16, blank=True, default="")

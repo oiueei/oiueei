@@ -94,7 +94,7 @@ class TestCollectionSerializer:
         assert data["collection_code"] == "COLL01"
         assert data["collection_headline"] == "My Collection"
         assert data["collection_thumbnail_url"] is not None
-        assert data["collection_theeeme"] == "BRCLON"
+        assert data["collection_theeeme"] == "JMPA01"
 
 
 class TestCollectionCreateSerializer:
@@ -155,14 +155,14 @@ class TestThingCreateSerializer:
         serializer = ThingCreateSerializer(
             data={
                 "thing_headline": "My Thing",
-                "thing_type": "GIFT_ARTICLE",
+                "thing_type": "GIFT_THING",
             }
         )
         assert serializer.is_valid()
 
     def test_missing_headline(self):
         """Should reject missing headline."""
-        serializer = ThingCreateSerializer(data={"thing_type": "GIFT_ARTICLE"})
+        serializer = ThingCreateSerializer(data={"thing_type": "GIFT_THING"})
         assert not serializer.is_valid()
 
 

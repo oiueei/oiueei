@@ -81,7 +81,7 @@ class TestCreateCollectionFlow:
             "/api/v1/things/",
             {
                 "thing_headline": "Red Bicycle",
-                "thing_type": "GIFT_ARTICLE",
+                "thing_type": "GIFT_THING",
                 "thing_description": "A shiny red bicycle",
                 "collection_code": collection_code,
             },
@@ -93,7 +93,7 @@ class TestCreateCollectionFlow:
         # Step 3: Verify thing is in collection
         response = authenticated_client.get(f"/api/v1/collections/{collection_code}/")
         assert response.status_code == status.HTTP_200_OK
-        assert thing_code in response.data["collection_articles"]
+        assert thing_code in response.data["collection_things"]
 
         # Step 4: Verify user's collections and things are updated
         response = authenticated_client.get("/api/v1/auth/me/")
@@ -145,7 +145,7 @@ class TestShareCollectionFlow:
             "/api/v1/things/",
             {
                 "thing_headline": "Coffee Machine",
-                "thing_type": "GIFT_ARTICLE",
+                "thing_type": "GIFT_THING",
                 "collection_code": collection_code,
             },
             format="json",
@@ -178,7 +178,7 @@ class TestShareCollectionFlow:
         # Step 5: Friend views collection
         response = client.get(f"/api/v1/collections/{collection_code}/")
         assert response.status_code == status.HTTP_200_OK
-        assert thing_code in response.data["collection_articles"]
+        assert thing_code in response.data["collection_things"]
 
         # Step 6: Friend reserves thing
         response = client.post(f"/api/v1/things/{thing_code}/reserve/")
@@ -233,7 +233,7 @@ class TestFAQFlow:
             "/api/v1/things/",
             {
                 "thing_headline": "Vintage Camera",
-                "thing_type": "SELL_ARTICLE",
+                "thing_type": "SELL_THING",
                 "thing_fee": "150.00",
                 "collection_code": collection_code,
             },
@@ -340,7 +340,7 @@ class TestCompleteUserJourney:
                 "/api/v1/things/",
                 {
                     **item,
-                    "thing_type": "GIFT_ARTICLE",
+                    "thing_type": "GIFT_THING",
                     "collection_code": wishlist_code,
                 },
                 format="json",
@@ -418,7 +418,7 @@ class TestCompleteUserJourney:
 
         # Alice sees her collection status
         response = client.get(f"/api/v1/collections/{wishlist_code}/")
-        assert len(response.data["collection_articles"]) == 3
+        assert len(response.data["collection_things"]) == 3
 
         # Check reservations
         response = client.get(f"/api/v1/things/{thing_codes[0]}/")

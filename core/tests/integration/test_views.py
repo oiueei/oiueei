@@ -155,6 +155,39 @@ class TestCollectionViews:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["collection_headline"] == "New Collection"
 
+    def test_create_collection_uses_default_theeeme(self, authenticated_client):
+        """Should use default theeeme (BAR_CEL_ONA) when not specified."""
+        response = authenticated_client.post(
+            "/api/v1/collections/",
+            {"collection_headline": "New Collection"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["collection_theeeme"] == "JMPA01"
+
+    def test_create_collection_without_headline_fails(self, authenticated_client):
+        """Should fail to create collection without headline."""
+        response = authenticated_client.post(
+            "/api/v1/collections/",
+            {"collection_description": "No headline"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "collection_headline" in response.data
+
+    def test_create_collection_with_invalid_theeeme_fails(self, authenticated_client):
+        """Should fail to create collection with non-existent theeeme."""
+        response = authenticated_client.post(
+            "/api/v1/collections/",
+            {
+                "collection_headline": "New Collection",
+                "collection_theeeme": "NOEXST",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "collection_theeeme" in response.data
+
     def test_get_collection(self, authenticated_client, collection):
         """Should get collection details."""
         response = authenticated_client.get(f"/api/v1/collections/{collection.collection_code}/")
@@ -170,6 +203,23 @@ class TestCollectionViews:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["collection_headline"] == "Updated Collection"
+
+    def test_update_collection_theeeme_denied_for_non_owner(self, user, user2, collection):
+        """Should deny theeeme update for non-owner."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.put(
+            f"/api/v1/collections/{collection.collection_code}/",
+            {"collection_theeeme": "JMPA01"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the owner can update this collection"
 
     def test_delete_collection(self, authenticated_client, collection):
         """Should delete collection."""
@@ -252,7 +302,7 @@ class TestCollectionViews:
         """Verifying invite RSVP should add user to collection."""
         from core.models import RSVP, User
 
-        # Create a user and RSVP with collection_code
+        # Create a user and RSVP with collection_code and COLLECTION_INVITE action
         invited_user = User.objects.create(
             user_code="INVTD1",
             user_email="invited@oiueei.org",
@@ -260,6 +310,7 @@ class TestCollectionViews:
         rsvp = RSVP.objects.create(
             user_code=invited_user.user_code,
             user_email=invited_user.user_email,
+            rsvp_action="COLLECTION_INVITE",
             collection_code=collection.collection_code,
         )
 
@@ -271,16 +322,17 @@ class TestCollectionViews:
         collection.refresh_from_db()
         invited_user.refresh_from_db()
         assert invited_user.user_code in collection.collection_invites
-        assert collection.collection_code in invited_user.user_shared_collections
+        assert collection.collection_code in invited_user.user_invited_collections
 
-        # Response should include invited_collection
+        # Response should include invited_collection and action
         assert response.data["invited_collection"] == collection.collection_code
+        assert response.data["action"] == "COLLECTION_INVITE"
 
     def test_remove_invite_from_collection(self, authenticated_client, user, user2, collection):
         """Should remove a user from collection invites."""
         # First add user2 to collection invites
         collection.add_invite(user2.user_code)
-        user2.user_shared_collections.append(collection.collection_code)
+        user2.user_invited_collections.append(collection.collection_code)
         user2.save()
 
         response = authenticated_client.delete(
@@ -295,7 +347,7 @@ class TestCollectionViews:
         collection.refresh_from_db()
         user2.refresh_from_db()
         assert user2.user_code not in collection.collection_invites
-        assert collection.collection_code not in user2.user_shared_collections
+        assert collection.collection_code not in user2.user_invited_collections
 
     def test_remove_invite_denied_for_non_owner(self, user, user2, collection):
         """Should deny removing invite for non-owner."""
@@ -335,7 +387,7 @@ class TestCollectionViews:
             thing_code="THING2",
             thing_owner=user.user_code,
             thing_headline="New Thing",
-            thing_type="GIFT_ARTICLE",
+            thing_type="GIFT_THING",
         )
 
         response = authenticated_client.post(
@@ -345,7 +397,7 @@ class TestCollectionViews:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["message"] == "Thing added to collection"
-        assert thing.thing_code in response.data["collection"]["collection_articles"]
+        assert thing.thing_code in response.data["collection"]["collection_things"]
 
     def test_add_thing_to_collection_denied_for_non_owner(self, user, user2, collection):
         """Should deny adding thing for non-owner of collection."""
@@ -359,7 +411,7 @@ class TestCollectionViews:
             thing_code="THING2",
             thing_owner=user2.user_code,
             thing_headline="User2 Thing",
-            thing_type="GIFT_ARTICLE",
+            thing_type="GIFT_THING",
         )
 
         # user2 tries to add to user's collection
@@ -386,7 +438,7 @@ class TestCollectionViews:
             thing_code="THING2",
             thing_owner=user2.user_code,
             thing_headline="User2 Thing",
-            thing_type="GIFT_ARTICLE",
+            thing_type="GIFT_THING",
         )
 
         # user (owner of collection) tries to add user2's thing
@@ -426,7 +478,7 @@ class TestCollectionViews:
             thing_code="THING2",
             thing_owner=user.user_code,
             thing_headline="New Thing",
-            thing_type="GIFT_ARTICLE",
+            thing_type="GIFT_THING",
         )
 
         response = authenticated_client.post(
@@ -454,7 +506,7 @@ class TestThingViews:
             "/api/v1/things/",
             {
                 "thing_headline": "New Thing",
-                "thing_type": "GIFT_ARTICLE",
+                "thing_type": "GIFT_THING",
             },
             format="json",
         )
@@ -486,7 +538,7 @@ class TestThingViews:
         """Should reserve thing."""
         # Share collection with user2 first
         collection.add_invite(user2.user_code)
-        user2.user_shared_collections.append(collection.collection_code)
+        user2.user_invited_collections.append(collection.collection_code)
         user2.save()
 
         # Create new client for user2
@@ -517,15 +569,26 @@ class TestFAQViews:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
 
-    def test_create_faq(self, authenticated_client, thing):
-        """Should create a new FAQ."""
-        response = authenticated_client.post(
+    def test_create_faq(self, user, user2, thing, collection):
+        """Should create a new FAQ as invited user."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        # Invite user2 to the collection
+        collection.add_invite(user2.user_code)
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(
             f"/api/v1/things/{thing.thing_code}/faq/",
             {"faq_question": "How big is it?"},
             format="json",
         )
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["faq_question"] == "How big is it?"
+        assert response.data["faq_questioner"] == user2.user_code
 
     def test_get_faq(self, authenticated_client, faq):
         """Should get FAQ details."""
@@ -560,6 +623,102 @@ class TestFAQViews:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert response.data["error"] == "Only the thing owner can answer questions"
+
+    def test_create_faq_denied_for_owner(self, authenticated_client, thing):
+        """Owner cannot ask questions about their own thing."""
+        response = authenticated_client.post(
+            f"/api/v1/things/{thing.thing_code}/faq/",
+            {"faq_question": "Can I ask myself?"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Owner cannot ask questions about their own thing"
+
+    def test_hide_faq(self, authenticated_client, faq):
+        """Owner can hide a FAQ."""
+        response = authenticated_client.post(f"/api/v1/faq/{faq.faq_code}/hide/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "FAQ hidden"
+        assert response.data["faq"]["faq_is_visible"] is False
+
+    def test_show_faq(self, authenticated_client, faq):
+        """Owner can show a hidden FAQ."""
+        # First hide it
+        from core.models import FAQ
+
+        faq_obj = FAQ.objects.get(faq_code=faq.faq_code)
+        faq_obj.faq_is_visible = False
+        faq_obj.save()
+
+        response = authenticated_client.post(f"/api/v1/faq/{faq.faq_code}/show/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "FAQ shown"
+        assert response.data["faq"]["faq_is_visible"] is True
+
+    def test_hide_faq_denied_for_non_owner(self, user, user2, faq):
+        """Non-owner cannot hide a FAQ."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(f"/api/v1/faq/{faq.faq_code}/hide/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"] == "Only the thing owner can change FAQ visibility"
+
+    def test_create_faq_sends_email_to_owner(self, user, user2, thing, collection):
+        """Creating FAQ should send email to thing owner."""
+        from django.core import mail
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        collection.add_invite(user2.user_code)
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        response = client2.post(
+            f"/api/v1/things/{thing.thing_code}/faq/",
+            {"faq_question": "Is this still available?"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Check email was sent to owner
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [user.user_email]
+        assert "Nueva pregunta" in mail.outbox[0].subject
+
+    def test_answer_faq_sends_email_to_questioner(self, authenticated_client, user, user2, faq):
+        """Answering FAQ should send email to questioner."""
+        from django.core import mail
+
+        response = authenticated_client.post(
+            f"/api/v1/faq/{faq.faq_code}/answer/",
+            {"faq_answer": "Yes, it is available!"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Check email was sent to questioner
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [user2.user_email]
+        assert "respondida" in mail.outbox[0].subject
+
+    def test_hide_faq_sends_email_to_questioner(self, authenticated_client, user, user2, faq):
+        """Hiding FAQ should send email to questioner."""
+        from django.core import mail
+
+        response = authenticated_client.post(f"/api/v1/faq/{faq.faq_code}/hide/")
+        assert response.status_code == status.HTTP_200_OK
+
+        # Check email was sent to questioner
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [user2.user_email]
+        assert "ocultada" in mail.outbox[0].subject
 
 
 @pytest.mark.django_db
@@ -775,7 +934,7 @@ class TestReservationViews:
         return client
 
     def test_request_reservation(self, user, user2, thing, collection):
-        """Should create a reservation request and change thing status to TAKEN."""
+        """Should create a booking request and change thing status to TAKEN."""
         # Invite user2 to collection
         collection.add_invite(user2.user_code)
 
@@ -783,8 +942,8 @@ class TestReservationViews:
         response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["message"] == "Reservation request sent"
-        assert "reservation_code" in response.data
+        assert response.data["message"] == "Booking request sent"
+        assert "booking_code" in response.data
 
         # Verify thing status changed to TAKEN
         thing.refresh_from_db()
@@ -817,99 +976,125 @@ class TestReservationViews:
         assert response.data["error"] == "Thing is not available for reservation"
 
     def test_accept_reservation(self, api_client, user, user2, thing, collection):
-        """Should accept reservation and change thing status to INACTIVE."""
-        from core.models import ReservationRequest
+        """Should accept reservation via RSVP and change thing status to INACTIVE."""
+        from core.models import RSVP
+        from core.models.booking import BookingPeriod
 
         collection.add_invite(user2.user_code)
 
-        # Create reservation request
-        reservation = ReservationRequest.objects.create(
+        # Create booking request (for GIFT_THING)
+        booking = BookingPeriod.objects.create(
             thing_code=thing.thing_code,
+            thing_type=thing.thing_type,
             requester_code=user2.user_code,
             requester_email=user2.user_email,
             owner_code=user.user_code,
+            start_date=None,
+            end_date=None,
         )
         thing.thing_status = "TAKEN"
         thing.save()
 
-        # Accept via link
-        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/accept/")
+        # Create RSVP for accept action (as would be done when sending email)
+        rsvp = RSVP.create_for_booking("BOOKING_ACCEPT", booking, user.user_email)
+
+        # Accept via RSVP link
+        response = api_client.get(f"/api/v1/rsvp/{rsvp.rsvp_code}/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["message"] == "Reservation accepted"
+        assert response.data["message"] == "Booking accepted"
+        assert response.data["action"] == "BOOKING_ACCEPT"
 
-        # Verify thing status and reservation status
+        # Verify thing status and booking status
         thing.refresh_from_db()
-        reservation.refresh_from_db()
+        booking.refresh_from_db()
         assert thing.thing_status == "INACTIVE"
         assert thing.thing_available is False
         assert user2.user_code in thing.thing_deal
-        assert reservation.status == "ACCEPTED"
+        assert booking.status == "ACCEPTED"
 
     def test_reject_reservation(self, api_client, user, user2, thing, collection):
-        """Should reject reservation and change thing status back to ACTIVE."""
-        from core.models import ReservationRequest
+        """Should reject reservation via RSVP and change thing status back to ACTIVE."""
+        from core.models import RSVP
+        from core.models.booking import BookingPeriod
 
         collection.add_invite(user2.user_code)
 
-        # Create reservation request
-        reservation = ReservationRequest.objects.create(
+        # Create booking request (for GIFT_THING)
+        booking = BookingPeriod.objects.create(
             thing_code=thing.thing_code,
+            thing_type=thing.thing_type,
             requester_code=user2.user_code,
             requester_email=user2.user_email,
             owner_code=user.user_code,
+            start_date=None,
+            end_date=None,
         )
         thing.thing_status = "TAKEN"
         thing.save()
 
-        # Reject via link
-        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/reject/")
+        # Create RSVP for reject action
+        rsvp = RSVP.create_for_booking("BOOKING_REJECT", booking, user.user_email)
+
+        # Reject via RSVP link
+        response = api_client.get(f"/api/v1/rsvp/{rsvp.rsvp_code}/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["message"] == "Reservation rejected"
+        assert response.data["message"] == "Booking rejected"
+        assert response.data["action"] == "BOOKING_REJECT"
 
-        # Verify thing status and reservation status
+        # Verify thing status and booking status
         thing.refresh_from_db()
-        reservation.refresh_from_db()
+        booking.refresh_from_db()
         assert thing.thing_status == "ACTIVE"
-        assert reservation.status == "REJECTED"
+        assert booking.status == "REJECTED"
 
     def test_reservation_expired(self, api_client, user, user2, thing):
-        """Should return error for expired reservation."""
+        """Should return error for expired booking via RSVP."""
         from datetime import timedelta
 
         from django.utils import timezone
 
-        from core.models import ReservationRequest
+        from core.models import RSVP
+        from core.models.booking import BookingPeriod
 
-        # Create expired reservation
-        reservation = ReservationRequest.objects.create(
+        # Create expired booking
+        booking = BookingPeriod.objects.create(
             thing_code=thing.thing_code,
+            thing_type=thing.thing_type,
             requester_code=user2.user_code,
             requester_email=user2.user_email,
             owner_code=user.user_code,
+            start_date=None,
+            end_date=None,
         )
-        reservation.reservation_created = timezone.now() - timedelta(hours=100)
-        reservation.save()
+        booking.booking_created = timezone.now() - timedelta(hours=100)
+        booking.save()
 
-        response = api_client.get(f"/api/v1/reservations/{reservation.reservation_code}/accept/")
+        # Create RSVP for accept action
+        rsvp = RSVP.create_for_booking("BOOKING_ACCEPT", booking, user.user_email)
+
+        response = api_client.get(f"/api/v1/rsvp/{rsvp.rsvp_code}/")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["error"] == "Reservation expired or already processed"
+        assert response.data["error"] == "Booking expired or already processed"
 
     def test_duplicate_request_denied(self, user, user2, thing, collection):
         """Should deny duplicate pending request."""
-        from core.models import ReservationRequest
+        from core.models.booking import BookingPeriod
 
         collection.add_invite(user2.user_code)
 
-        # Create existing pending request
-        ReservationRequest.objects.create(
+        # Create existing pending booking
+        BookingPeriod.objects.create(
             thing_code=thing.thing_code,
+            thing_type=thing.thing_type,
             requester_code=user2.user_code,
             requester_email=user2.user_email,
             owner_code=user.user_code,
             status="PENDING",
+            start_date=None,
+            end_date=None,
         )
 
         client2 = self._get_client_for_user(user2)

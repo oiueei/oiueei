@@ -23,7 +23,7 @@ class UserSerializer(serializers.ModelSerializer):
             "user_created",
             "user_last_activity",
             "user_own_collections",
-            "user_shared_collections",
+            "user_invited_collections",
             "user_things",
             "user_headline",
             "user_thumbnail",
@@ -37,7 +37,7 @@ class UserSerializer(serializers.ModelSerializer):
             "user_created",
             "user_last_activity",
             "user_own_collections",
-            "user_shared_collections",
+            "user_invited_collections",
             "user_things",
         ]
 

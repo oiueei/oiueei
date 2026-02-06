@@ -31,7 +31,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             "collection_hero",
             "collection_hero_url",
             "collection_status",
-            "collection_articles",
+            "collection_things",
             "collection_invites",
             "collection_theeeme",
         ]
@@ -39,7 +39,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             "collection_code",
             "collection_owner",
             "collection_created",
-            "collection_articles",
+            "collection_things",
             "collection_invites",
         ]
 

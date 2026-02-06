@@ -1,5 +1,10 @@
 """
-BookingPeriod model for date-based lending calendar.
+BookingPeriod model - unified reservation/booking model for all thing types.
+
+This model handles all reservation scenarios:
+- GIFT_THING, SELL_THING: Single-use reservations (no dates, thing becomes INACTIVE)
+- ORDER_THING: Repeatable orders (delivery_date + quantity, thing stays ACTIVE)
+- LEND_THING, RENT_THING, SHARE_THING: Date-based bookings (start/end dates, thing stays ACTIVE)
 """
 
 from datetime import timedelta
@@ -10,11 +15,28 @@ from django.utils import timezone
 
 from core.utils import generate_id
 
+# Thing types that require dates for booking
+DATE_BASED_TYPES = ["LEND_THING", "RENT_THING", "SHARE_THING"]
+
+# Thing types where the thing becomes unavailable after acceptance
+SINGLE_USE_TYPES = ["GIFT_THING", "SELL_THING"]
+
+# Thing types that can be ordered repeatedly (always available)
+REPEATABLE_TYPES = ["ORDER_THING"]
+
 
 class BookingPeriod(models.Model):
     """
-    A booking period for lend/rent/share things.
-    Represents a date range when a thing is reserved or requested.
+    Unified reservation/booking model for all thing types.
+
+    For GIFT/SELL: no dates required
+    For ORDER: delivery_date and quantity required
+    For LEND/RENT/SHARE: start_date and end_date required
+
+    The thing_type field determines behavior on acceptance:
+    - GIFT/SELL: thing.thing_status -> INACTIVE, thing.thing_available -> False
+    - ORDER: thing stays ACTIVE (can be ordered again)
+    - LEND/RENT/SHARE: thing stays ACTIVE (date-based availability)
     """
 
     STATUS_CHOICES = [
@@ -27,11 +49,14 @@ class BookingPeriod(models.Model):
     booking_code = models.CharField(max_length=6, primary_key=True, default=generate_id)
     booking_created = models.DateTimeField(default=timezone.now)
     thing_code = models.CharField(max_length=6, db_index=True)
+    thing_type = models.CharField(max_length=12, default="GIFT_THING")  # To know how to handle
     requester_code = models.CharField(max_length=6)
     requester_email = models.CharField(max_length=64)
     owner_code = models.CharField(max_length=6)
-    start_date = models.DateField()
-    end_date = models.DateField()
+    start_date = models.DateField(null=True, blank=True)  # For LEND/RENT/SHARE
+    end_date = models.DateField(null=True, blank=True)  # For LEND/RENT/SHARE
+    delivery_date = models.DateField(null=True, blank=True)  # For ORDER_THING
+    quantity = models.PositiveIntegerField(null=True, blank=True)  # For ORDER_THING
     status = models.CharField(max_length=8, choices=STATUS_CHOICES, default="PENDING")
 
     class Meta:
@@ -39,10 +64,30 @@ class BookingPeriod(models.Model):
         db_table = "booking_periods"
 
     def __str__(self):
-        return (
-            f"Booking {self.booking_code} for {self.thing_code} "
-            f"({self.start_date} - {self.end_date})"
-        )
+        if self.start_date and self.end_date:
+            return (
+                f"Booking {self.booking_code} for {self.thing_code} "
+                f"({self.start_date} - {self.end_date})"
+            )
+        if self.delivery_date:
+            qty = f"x{self.quantity}" if self.quantity else ""
+            return (
+                f"Order {self.booking_code} for {self.thing_code} "
+                f"(delivery: {self.delivery_date}) {qty}"
+            )
+        return f"Booking {self.booking_code} for {self.thing_code}"
+
+    def is_date_based(self):
+        """Check if this booking requires dates (LEND/RENT/SHARE)."""
+        return self.thing_type in DATE_BASED_TYPES
+
+    def is_single_use(self):
+        """Check if this booking makes the thing unavailable (GIFT/SELL)."""
+        return self.thing_type in SINGLE_USE_TYPES
+
+    def is_repeatable(self):
+        """Check if this thing can be ordered repeatedly (ORDER)."""
+        return self.thing_type in REPEATABLE_TYPES
 
     def is_valid(self):
         """Check if the booking request is still valid (not expired and PENDING)."""

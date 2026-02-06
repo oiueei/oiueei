@@ -1,5 +1,3 @@
-# OIUEEI Project Context
-
 ## What is OIUEEI?
 
 An open-source web application for people to share their belongings with friends and others around. Users can create collections (wishlists, gift lists, items for sale) and share them with friends who can then reserve items or ask questions.
@@ -18,35 +16,33 @@ An open-source web application for people to share their belongings with friends
 |-------|---------|
 | **User** | Users with magic link auth. Custom model with `user_code` as PK (6-char alphanumeric) |
 | **Collection** | Lists of things owned by a user, can be shared via invites |
-| **Thing** | Items in collections. Types: GIFT_ARTICLE, SELL_ARTICLE, ORDER_ARTICLE, RENT_ARTICLE, LEND_ARTICLE, SHARE_ARTICLE |
+| **Thing** | Items in collections. Types: GIFT_THING, SELL_THING, ORDER_THING, RENT_THING, LEND_THING, SHARE_THING |
 | **FAQ** | Questions/answers about things |
-| **Theeeme** | Colour palettes (10 colours) for customising collections |
-| **RSVP** | Magic link tokens (one-time use, 24h expiry) |
-| **ReservationRequest** | Reservation requests for GIFT/SELL/ORDER pending owner approval (72h expiry) |
-| **BookingPeriod** | Date-based booking requests for LEND/RENT/SHARE (72h expiry, allows multiple non-overlapping bookings) |
+| **Theeeme** | Colour palettes (6 colours) for customising collections |
+| **RSVP** | Magic link tokens (one-time use, 24h expiry) for auth and email actions |
+| **BookingPeriod** | Unified booking/reservation model for all thing types (72h expiry). Handles: single-use (GIFT/SELL), repeatable orders (ORDER with delivery_date+quantity), and date-based calendar (LEND/RENT/SHARE with start_date+end_date) |
 
 ## Key Relationships
 
 - Collection → User (owner via `collection_owner`)
 - Collection → Theeeme (FK with PROTECT)
 - Collection has `collection_invites` (list of user_codes who can view)
-- Collection has `collection_articles` (list of thing_codes)
+- Collection has `collection_things` (list of thing_codes)
 - Thing → User (owner via `thing_owner`)
 - FAQ → Thing (via `faq_thing`)
-- ReservationRequest → Thing (via `thing_code`) - for GIFT/SELL/ORDER
-- ReservationRequest → User (requester via `requester_code`, owner via `owner_code`)
-- BookingPeriod → Thing (via `thing_code`) - for LEND/RENT/SHARE
+- BookingPeriod → Thing (via `thing_code`) - for all thing types
 - BookingPeriod → User (requester via `requester_code`, owner via `owner_code`)
 
 ## API Endpoints
 
-### Auth
+### Auth & RSVP Actions
 | Method | URL | Description |
 |--------|-----|-------------|
 | POST | `/api/v1/auth/request-link/` | Request magic link |
-| GET | `/api/v1/auth/verify/{rsvp_code}/` | Verify magic link, get JWT |
+| GET | `/api/v1/auth/verify/{rsvp_code}/` | Verify magic link or process any RSVP action |
 | GET | `/api/v1/auth/me/` | Get authenticated user |
 | POST | `/api/v1/auth/logout/` | Log out |
+| GET | `/api/v1/rsvp/{rsvp_code}/` | Process any RSVP action (unified endpoint) |
 
 ### Users
 | Method | URL | Description |
@@ -77,31 +73,27 @@ An open-source web application for people to share their belongings with friends
 | DELETE | `/api/v1/things/{code}/` | Delete thing (owner only) |
 | POST | `/api/v1/things/{code}/reserve/` | Reserve without approval (guest only) |
 | POST | `/api/v1/things/{code}/release/` | Release reservation |
-| POST | `/api/v1/things/{code}/request/` | Request reservation with approval (guest only). For LEND/RENT/SHARE requires `start_date` and `end_date` |
+| POST | `/api/v1/things/{code}/request/` | Request reservation with approval (guest only). For LEND/RENT/SHARE requires `start_date` and `end_date`. For ORDER requires `delivery_date` and `quantity` |
 | GET | `/api/v1/things/{code}/calendar/` | View booking calendar (LEND/RENT/SHARE). Owner sees full details, guest sees only blocked dates |
 | GET | `/api/v1/invited-things/` | List things from invited collections (guest only) |
-
-### Reservations (GIFT/SELL/ORDER)
-| Method | URL | Description |
-|--------|-----|-------------|
-| GET | `/api/v1/reservations/{code}/accept/` | Accept reservation (via email) |
-| GET | `/api/v1/reservations/{code}/reject/` | Reject reservation (via email) |
 
 ### Bookings (LEND/RENT/SHARE)
 | Method | URL | Description |
 |--------|-----|-------------|
-| GET | `/api/v1/bookings/{code}/accept/` | Accept booking (via email) |
-| GET | `/api/v1/bookings/{code}/reject/` | Reject booking (via email) |
 | GET | `/api/v1/my-bookings/` | List my booking requests |
 | GET | `/api/v1/owner-bookings/` | List bookings for my things (owner only) |
+
+**Note:** Reservation and booking accept/reject actions are handled via RSVP links sent by email. The owner receives a unique RSVP code for each action, accessed via `/api/v1/rsvp/{rsvp_code}/`. This prevents exposing real reservation or booking codes in URLs.
 
 ### FAQ
 | Method | URL | Description |
 |--------|-----|-------------|
 | GET | `/api/v1/things/{thing_code}/faq/` | List FAQs for a thing |
-| POST | `/api/v1/things/{thing_code}/faq/` | Create question |
+| POST | `/api/v1/things/{thing_code}/faq/` | Create question (invited users only, not owner) |
 | GET | `/api/v1/faq/{faq_code}/` | View FAQ |
 | POST | `/api/v1/faq/{faq_code}/answer/` | Answer FAQ (owner only) |
+| POST | `/api/v1/faq/{faq_code}/hide/` | Hide FAQ (owner only) |
+| POST | `/api/v1/faq/{faq_code}/show/` | Show FAQ (owner only) |
 
 ### Admin
 - `/admin/` - Django Admin (requires password)
@@ -129,7 +121,7 @@ python manage.py createsuperuser
 
 ## Default Data
 
-- Default Theeeme: "Barcelona"
+- Default Theeeme: "BAR_CEL_ONA"
 
 ## Important Notes
 

@@ -2,12 +2,13 @@
 FAQ views for OIUEEI.
 """
 
+from django.core.mail import send_mail
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import FAQ, Thing
+from core.models import FAQ, Thing, User
 from core.serializers import FAQAnswerSerializer, FAQCreateSerializer, FAQSerializer
 
 
@@ -60,7 +61,14 @@ class ThingFAQListView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check if user can view the thing (must be able to view to ask questions)
+        # Owner cannot ask questions about their own thing
+        if thing.is_owner(request.user.user_code):
+            return Response(
+                {"error": "Owner cannot ask questions about their own thing"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check if user can view the thing (must be invited to ask questions)
         if not thing.can_view(request.user.user_code):
             return Response(
                 {"error": "Not authorized to ask questions about this thing"},
@@ -78,6 +86,26 @@ class ThingFAQListView(APIView):
 
         # Add FAQ to thing
         thing.add_faq(faq.faq_code)
+
+        # Notify owner by email
+        try:
+            owner = User.objects.get(user_code=thing.thing_owner)
+            questioner_name = request.user.user_name or request.user.user_email
+            send_mail(
+                subject=f"Nueva pregunta sobre: {thing.thing_headline}",
+                message=f"{questioner_name} ha preguntado: {faq.faq_question}",
+                from_email=None,
+                recipient_list=[owner.user_email],
+                html_message=f"""
+                <html>
+                <p><strong>{questioner_name}</strong> ha hecho una pregunta sobre:</p>
+                <p><strong>{thing.thing_headline}</strong></p>
+                <p>Pregunta: {faq.faq_question}</p>
+                </html>
+                """,
+            )
+        except User.DoesNotExist:
+            pass  # Owner not found, skip email
 
         return Response(
             FAQSerializer(faq).data,
@@ -171,4 +199,95 @@ class FAQAnswerView(APIView):
 
         faq.answer(serializer.validated_data["faq_answer"])
 
+        # Notify questioner by email
+        try:
+            questioner = User.objects.get(user_code=faq.faq_questioner)
+            owner_name = request.user.user_name or request.user.user_email
+            send_mail(
+                subject=f"Tu pregunta ha sido respondida: {thing.thing_headline}",
+                message=f"{owner_name} ha respondido: {faq.faq_answer}",
+                from_email=None,
+                recipient_list=[questioner.user_email],
+                html_message=f"""
+                <html>
+                <p><strong>{owner_name}</strong> ha respondido tu pregunta sobre:</p>
+                <p><strong>{thing.thing_headline}</strong></p>
+                <p>Tu pregunta: {faq.faq_question}</p>
+                <p>Respuesta: {faq.faq_answer}</p>
+                </html>
+                """,
+            )
+        except User.DoesNotExist:
+            pass  # Questioner not found, skip email
+
         return Response(FAQSerializer(faq).data)
+
+
+class FAQVisibilityView(APIView):
+    """
+    POST /api/v1/faq/{faq_code}/hide/
+    Hide a FAQ (thing owner only).
+
+    POST /api/v1/faq/{faq_code}/show/
+    Show a FAQ (thing owner only).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_faq_and_thing(self, faq_code):
+        try:
+            faq = FAQ.objects.get(faq_code=faq_code)
+            thing = Thing.objects.get(thing_code=faq.faq_thing)
+            return faq, thing
+        except (FAQ.DoesNotExist, Thing.DoesNotExist):
+            return None, None
+
+    def post(self, request, faq_code, action):
+        faq, thing = self._get_faq_and_thing(faq_code)
+
+        if not faq:
+            return Response(
+                {"error": "FAQ not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not thing.is_owner(request.user.user_code):
+            return Response(
+                {"error": "Only the thing owner can change FAQ visibility"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if action == "hide":
+            faq.faq_is_visible = False
+            faq.save(update_fields=["faq_is_visible"])
+
+            # Notify questioner by email
+            try:
+                questioner = User.objects.get(user_code=faq.faq_questioner)
+                owner_name = request.user.user_name or request.user.user_email
+                send_mail(
+                    subject=f"Tu pregunta ha sido ocultada: {thing.thing_headline}",
+                    message=f"{owner_name} ha ocultado tu pregunta: {faq.faq_question}",
+                    from_email=None,
+                    recipient_list=[questioner.user_email],
+                    html_message=f"""
+                    <html>
+                    <p><strong>{owner_name}</strong> ha ocultado tu pregunta sobre:</p>
+                    <p><strong>{thing.thing_headline}</strong></p>
+                    <p>Tu pregunta: {faq.faq_question}</p>
+                    </html>
+                    """,
+                )
+            except User.DoesNotExist:
+                pass  # Questioner not found, skip email
+
+            return Response({"message": "FAQ hidden", "faq": FAQSerializer(faq).data})
+        elif action == "show":
+            faq.faq_is_visible = True
+            faq.save(update_fields=["faq_is_visible"])
+            return Response({"message": "FAQ shown", "faq": FAQSerializer(faq).data})
+        else:
+            return Response(
+                {"error": "Invalid action"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
