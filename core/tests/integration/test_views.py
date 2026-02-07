@@ -10,15 +10,15 @@ from rest_framework import status
 class TestAuthViews:
     """Tests for authentication views."""
 
-    def test_request_link_new_user(self, api_client):
-        """Should create user and send magic link."""
+    def test_request_link_non_existent_user_denied(self, api_client):
+        """Should deny magic link for non-existent user (invite-only)."""
         response = api_client.post(
             "/api/v1/auth/request-link/",
             {"email": "lala@oiueei.org"},
             format="json",
         )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["email"] == "lala@oiueei.org"
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "No account found" in response.data["error"]
 
     def test_request_link_existing_user(self, api_client, user):
         """Should send magic link for existing user."""
@@ -1253,3 +1253,143 @@ class TestThingAvailabilityVisibility:
 
         # Owner can always view
         assert thing.can_view(user.user_code) is True
+
+
+@pytest.mark.django_db
+class TestSecurityInputValidation:
+    """Tests for security input validation (XSS, injection prevention)."""
+
+    def test_headline_rejects_html_tags(self, authenticated_client):
+        """Should reject HTML tags in collection headline."""
+        response = authenticated_client.post(
+            "/api/v1/collections/",
+            {"collection_headline": "<script>alert(1)</script>"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "collection_headline" in response.data
+
+    def test_headline_accepts_plain_text(self, authenticated_client):
+        """Should accept plain text in collection headline."""
+        response = authenticated_client.post(
+            "/api/v1/collections/",
+            {"collection_headline": "My Wedding List 2024"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["collection_headline"] == "My Wedding List 2024"
+
+    def test_image_id_rejects_path_traversal(self, authenticated_client, user):
+        """Should reject path traversal attempts in image IDs."""
+        response = authenticated_client.put(
+            f"/api/v1/users/{user.user_code}/",
+            {"user_thumbnail": "../etc/passwd"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "user_thumbnail" in response.data
+
+    def test_image_id_accepts_valid_alphanumeric(self, authenticated_client, user):
+        """Should accept valid alphanumeric image IDs."""
+        response = authenticated_client.put(
+            f"/api/v1/users/{user.user_code}/",
+            {"user_thumbnail": "abc123_XYZ"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["user_thumbnail"] == "abc123_XYZ"
+
+    def test_quantity_max_99(self, user, user2, collection, theeeme):
+        """Should reject order quantity over 99."""
+        from datetime import date, timedelta
+
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        from core.models import Thing
+
+        # Create ORDER_THING
+        order_thing = Thing.objects.create(
+            thing_code="ORDER1",
+            thing_type="ORDER_THING",
+            thing_owner=user.user_code,
+            thing_headline="Cookies",
+            thing_status="ACTIVE",
+        )
+        collection.add_thing(order_thing.thing_code)
+        collection.add_invite(user2.user_code)
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        # Try to order 100 (should fail)
+        response = client2.post(
+            f"/api/v1/things/{order_thing.thing_code}/request/",
+            {
+                "delivery_date": str(date.today() + timedelta(days=7)),
+                "quantity": 100,
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # Order 99 should succeed
+        response = client2.post(
+            f"/api/v1/things/{order_thing.thing_code}/request/",
+            {
+                "delivery_date": str(date.today() + timedelta(days=7)),
+                "quantity": 99,
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestSecurityAuth:
+    """Tests for authentication security features."""
+
+    def test_invite_only_registration(self, api_client):
+        """New users cannot request magic links without being invited first."""
+        response = api_client.post(
+            "/api/v1/auth/request-link/",
+            {"email": "newuser@example.com"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "No account found" in response.data["error"]
+        assert "invite" in response.data["error"].lower()
+
+    def test_existing_user_can_request_magic_link(self, api_client, user):
+        """Existing users can request magic links."""
+        response = api_client.post(
+            "/api/v1/auth/request-link/",
+            {"email": user.user_email},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_email_not_exposed_in_public_profile(self, user, user2, collection):
+        """User email should not be exposed in public profile."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        # Connect users via collection
+        collection.add_invite(user2.user_code)
+
+        client2 = APIClient()
+        refresh = RefreshToken.for_user(user2)
+        client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        # View profile of collection owner
+        response = client2.get(f"/api/v1/users/{user.user_code}/")
+        assert response.status_code == status.HTTP_200_OK
+        assert "user_email" not in response.data
+
+    def test_email_visible_in_own_profile(self, authenticated_client, user):
+        """User can see their own email in their profile."""
+        response = authenticated_client.get(f"/api/v1/users/{user.user_code}/")
+        assert response.status_code == status.HTTP_200_OK
+        assert "user_email" in response.data
+        assert response.data["user_email"] == user.user_email

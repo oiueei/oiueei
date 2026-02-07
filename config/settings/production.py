@@ -29,6 +29,16 @@ SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
+# CORS: Configure from environment variable
+# React served by Django = same origin = no CORS needed typically
+# Only set if frontend is on different domain
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
+
 # Email: Configure for production (e.g., SendGrid, Mailgun)
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.sendgrid.net")
@@ -45,7 +55,7 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # Magic link base URL for production
 MAGIC_LINK_BASE_URL = os.environ.get("MAGIC_LINK_BASE_URL", "https://oiueei.com/magic-link")
 
-# Logging for production
+# Logging for production with security logger
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -54,11 +64,19 @@ LOGGING = {
             "format": "{levelname} {asctime} {module} {message}",
             "style": "{",
         },
+        "security": {
+            "format": "{levelname} {asctime} [SECURITY] {message}",
+            "style": "{",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+        },
+        "security_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "security",
         },
     },
     "root": {
@@ -69,6 +87,11 @@ LOGGING = {
         "django": {
             "handlers": ["console"],
             "level": "WARNING",
+            "propagate": False,
+        },
+        "security": {
+            "handlers": ["security_console"],
+            "level": "INFO",
             "propagate": False,
         },
     },

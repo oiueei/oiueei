@@ -6,9 +6,13 @@ RSVP serves as an intermediary for ALL email communications to avoid
 exposing real codes (booking_code, thing_code, etc.) in URLs.
 """
 
+import logging
+
 from django.conf import settings
 from django.contrib.auth import login
 from django.core.mail import send_mail
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -19,6 +23,8 @@ from core.models import RSVP, Collection, Thing, User
 from core.models.booking import SINGLE_USE_TYPES, BookingPeriod
 from core.serializers import RequestLinkSerializer, UserSerializer
 
+security_logger = logging.getLogger("security")
+
 
 class RequestLinkView(APIView):
     """
@@ -28,17 +34,27 @@ class RequestLinkView(APIView):
 
     permission_classes = [AllowAny]
 
+    @method_decorator(ratelimit(key="ip", rate="5/m", method="POST", block=True))
     def post(self, request):
         serializer = RequestLinkSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data["email"].lower()
+        ip = self._get_client_ip(request)
 
-        # Get or create user
-        user, created = User.objects.get_or_create(
-            user_email=email,
-            defaults={"user_email": email},
-        )
+        # INVITE-ONLY: Only existing users can request magic links
+        try:
+            user = User.objects.get(user_email=email)
+        except User.DoesNotExist:
+            security_logger.warning(
+                f"Magic link request denied for non-existent user: {email} from IP {ip}"
+            )
+            return Response(
+                {"error": "No account found. Please ask someone to invite you."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        security_logger.info(f"Magic link requested for {email} from IP {ip}")
 
         # Create RSVP
         rsvp = RSVP.objects.create(
@@ -70,6 +86,13 @@ class RequestLinkView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    def _get_client_ip(self, request):
+        """Get client IP address from request."""
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            return x_forwarded_for.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR", "unknown")
+
 
 class VerifyLinkView(APIView):
     """
@@ -85,16 +108,21 @@ class VerifyLinkView(APIView):
 
     permission_classes = [AllowAny]
 
+    @method_decorator(ratelimit(key="ip", rate="10/m", method="GET", block=True))
     def get(self, request, rsvp_code):
+        ip = self._get_client_ip(request)
+
         try:
             rsvp = RSVP.objects.get(rsvp_code=rsvp_code)
         except RSVP.DoesNotExist:
+            security_logger.warning(f"Invalid RSVP code attempted from IP {ip}")
             return Response(
                 {"error": "Invalid or expired link"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
         if not rsvp.is_valid():
+            security_logger.warning(f"Expired RSVP code used from IP {ip}")
             rsvp.delete()
             return Response(
                 {"error": "Link expired"},
@@ -114,6 +142,8 @@ class VerifyLinkView(APIView):
 
     def _handle_magic_link(self, request, rsvp):
         """Handle magic link authentication."""
+        ip = self._get_client_ip(request)
+
         # Get user
         try:
             user = User.objects.get(user_code=rsvp.user_code)
@@ -136,6 +166,8 @@ class VerifyLinkView(APIView):
         # Delete RSVP (one-time use)
         rsvp.delete()
 
+        security_logger.info(f"User {user.user_email} logged in via magic link from IP {ip}")
+
         # Return token and user data
         user_data = UserSerializer(user).data
 
@@ -148,6 +180,13 @@ class VerifyLinkView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+    def _get_client_ip(self, request):
+        """Get client IP address from request."""
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            return x_forwarded_for.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR", "unknown")
 
     def _handle_collection_invite(self, request, rsvp):
         """Handle collection invitation acceptance."""

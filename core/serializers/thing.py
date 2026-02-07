@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from core.models import Thing
 from core.utils import cloudinary_url
+from core.validators import ImageIdField, SafeHeadlineField, validate_image_id
 
 
 class ThingSerializer(serializers.ModelSerializer):
@@ -48,8 +49,22 @@ class ThingSerializer(serializers.ModelSerializer):
         return [cloudinary_url(pic_id) for pic_id in obj.thing_pictures if pic_id]
 
 
+class ImageIdListField(serializers.ListField):
+    """A list field that validates each item as an image ID."""
+
+    child = serializers.CharField(max_length=16, allow_blank=True)
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        return [validate_image_id(item) if item else item for item in value]
+
+
 class ThingCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating a thing."""
+
+    thing_headline = SafeHeadlineField(max_length=64)
+    thing_thumbnail = ImageIdField()
+    thing_pictures = ImageIdListField(required=False)
 
     class Meta:
         model = Thing
@@ -65,6 +80,10 @@ class ThingCreateSerializer(serializers.ModelSerializer):
 
 class ThingUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating a thing."""
+
+    thing_headline = SafeHeadlineField(max_length=64, required=False)
+    thing_thumbnail = ImageIdField()
+    thing_pictures = ImageIdListField(required=False)
 
     class Meta:
         model = Thing

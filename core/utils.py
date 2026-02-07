@@ -2,7 +2,7 @@
 Utility functions for OIUEEI.
 """
 
-import random
+import secrets
 import string
 
 from django.conf import settings
@@ -11,7 +11,7 @@ from django.conf import settings
 def generate_id():
     """Generate a unique 6-character alphanumeric ID in uppercase."""
     chars = string.ascii_uppercase + string.digits
-    return "".join(random.choice(chars) for _ in range(6))
+    return "".join(secrets.choice(chars) for _ in range(6))
 
 
 def cloudinary_url(image_id):

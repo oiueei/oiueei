@@ -95,7 +95,7 @@ class ThingOrderSerializer(serializers.Serializer):
     """Serializer for ORDER_THING requests (delivery_date + quantity)."""
 
     delivery_date = serializers.DateField()
-    quantity = serializers.IntegerField(min_value=1)
+    quantity = serializers.IntegerField(min_value=1, max_value=99)
 
     def validate_delivery_date(self, value):
         """Validate that delivery_date is today or in the future."""

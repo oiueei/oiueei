@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from core.models import User
 from core.utils import cloudinary_url
+from core.validators import ImageIdField, SafeHeadlineField
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -75,6 +76,10 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating user profile."""
+
+    user_headline = SafeHeadlineField(max_length=64, required=False, allow_blank=True)
+    user_thumbnail = ImageIdField()
+    user_hero = ImageIdField()
 
     class Meta:
         model = User

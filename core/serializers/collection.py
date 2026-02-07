@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from core.models import Collection, Theeeme
 from core.utils import cloudinary_url
+from core.validators import ImageIdField, SafeHeadlineField
 
 
 class CollectionSerializer(serializers.ModelSerializer):
@@ -53,6 +54,9 @@ class CollectionSerializer(serializers.ModelSerializer):
 class CollectionCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating a collection."""
 
+    collection_headline = SafeHeadlineField(max_length=64)
+    collection_thumbnail = ImageIdField()
+    collection_hero = ImageIdField()
     collection_theeeme = serializers.SlugRelatedField(
         slug_field="theeeme_code",
         queryset=Theeeme.objects.all(),
@@ -73,6 +77,9 @@ class CollectionCreateSerializer(serializers.ModelSerializer):
 class CollectionUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating a collection."""
 
+    collection_headline = SafeHeadlineField(max_length=64, required=False)
+    collection_thumbnail = ImageIdField()
+    collection_hero = ImageIdField()
     collection_theeeme = serializers.SlugRelatedField(
         slug_field="theeeme_code",
         queryset=Theeeme.objects.all(),

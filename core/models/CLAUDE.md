@@ -558,3 +558,42 @@ Things are divided into 3 categories:
 | GET | `/invited-things/` | Yes | List things from invited collections |
 
 ---
+
+## Security Considerations
+
+### Authentication & Authorization
+
+1. **Invite-only registration** - Users cannot self-register. They must be invited to a collection first (which creates their account).
+
+2. **Magic link authentication** - Passwordless via email. RSVPs expire after 24 hours and are one-time use.
+
+3. **JWT tokens** - Access tokens expire after 1 hour. Refresh tokens expire after 7 days. Tokens are rotated on refresh.
+
+4. **IDOR protection** - Users can only view profiles of users connected via collections (owner or invitee relationship).
+
+### Input Validation
+
+1. **Image IDs** - Only alphanumeric characters, underscores, and hyphens allowed. Prevents path traversal and injection.
+
+2. **Headlines** - HTML tags rejected to prevent XSS. Uses bleach for sanitization.
+
+3. **Quantities** - Order quantities capped at 99 to prevent abuse.
+
+4. **Dates** - Start dates must be today or future. End dates must be >= start dates.
+
+### Rate Limiting
+
+- `/auth/request-link/` - 5 requests per minute per IP
+- `/auth/verify/{code}/` - 10 requests per minute per IP
+
+### Secure Code Practices
+
+1. **ID generation** - Uses `secrets.choice()` for cryptographically secure random IDs.
+
+2. **SECRET_KEY** - Required from environment variable, not hardcoded.
+
+3. **RSVP obfuscation** - Real codes (booking_code, thing_code) never exposed in URLs. Always use RSVP codes as intermediaries.
+
+4. **Security logging** - Auth events logged with IP addresses for audit trail.
+
+---

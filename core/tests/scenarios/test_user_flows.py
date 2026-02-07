@@ -14,14 +14,17 @@ from core.models import RSVP, User
 class TestMagicLinkFlow:
     """
     Scenario: Magic link authentication flow.
-    1. User requests magic link
+    1. User (already invited) requests magic link
     2. User verifies magic link
     3. User gets session with JWT
     """
 
     def test_complete_magic_link_flow(self, api_client):
-        """Test complete magic link authentication flow."""
-        email = "newuser@example.com"
+        """Test complete magic link authentication flow for existing user."""
+        email = "inviteduser@example.com"
+
+        # Pre-condition: User must exist (was invited to a collection)
+        user = User.objects.create(user_email=email)
 
         # Step 1: Request magic link
         response = api_client.post(
@@ -31,8 +34,7 @@ class TestMagicLinkFlow:
         )
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify user and RSVP were created
-        user = User.objects.get(user_email=email)
+        # Verify RSVP was created
         rsvp = RSVP.objects.get(user_code=user.user_code)
 
         # Step 2: Verify magic link
@@ -311,6 +313,9 @@ class TestCompleteUserJourney:
 
         # === Alice signs up and creates a wishlist ===
 
+        # Alice was invited earlier (user must exist first in invite-only system)
+        alice = User.objects.create(user_email="alice@example.com")
+
         # Alice requests magic link
         response = client.post(
             "/api/v1/auth/request-link/",
@@ -319,7 +324,6 @@ class TestCompleteUserJourney:
         )
         assert response.status_code == status.HTTP_200_OK
 
-        alice = User.objects.get(user_email="alice@example.com")
         alice_rsvp = RSVP.objects.get(user_code=alice.user_code)
 
         # Alice verifies and gets token

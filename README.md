@@ -107,8 +107,9 @@ python manage.py runserver
 pytest -v --cov=core --cov-fail-under=80
 
 # Linting
-black .
-flake8 .
+./venv/bin/python -m black .
+./venv/bin/python -m isort .
+./venv/bin/python -m flake8 .
 
 # Migrations
 python manage.py makemigrations core
@@ -117,6 +118,35 @@ python manage.py migrate
 # Create admin user
 python manage.py createsuperuser
 ```
+
+## Security
+
+### Implemented Security Measures
+
+| Category | Measure | Description |
+|----------|---------|-------------|
+| Authentication | Magic Link | Passwordless auth via email (24h expiry) |
+| Authentication | JWT | 1-hour access tokens, 7-day refresh tokens |
+| Authentication | Invite-Only | New users must be invited to a collection first |
+| Authorization | IDOR Protection | Profile access only via collection connections |
+| Input Validation | XSS Prevention | HTML stripped from headlines and inputs |
+| Input Validation | Image ID | Alphanumeric validation prevents path traversal |
+| Input Validation | Quantity Limit | Orders capped at 99 items max |
+| Rate Limiting | Auth | 5 req/min for magic link, 10 req/min for verify |
+| Headers | X-Frame-Options | DENY (prevents clickjacking) |
+| Headers | Content-Type | nosniff (prevents MIME confusion) |
+| Pagination | Max 100 | Prevents DoS via large page requests |
+| CORS | Restricted | Only configured origins allowed |
+| CSRF | Protected | Lax same-site cookies, trusted origins |
+| Passwords | Validators | 12+ chars, not common, for admin users |
+| Logging | Security Events | Auth attempts logged with IP |
+
+### Security Roadmap
+
+- [ ] Email validation via AbstractAPI
+- [ ] 2FA for admin users
+- [ ] Audit logging to external service
+- [ ] Content Security Policy (CSP) headers
 
 ## Default Data
 
