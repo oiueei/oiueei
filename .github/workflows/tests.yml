@@ -35,6 +35,8 @@ jobs:
         run: flake8 .
 
       - name: Run tests with coverage
+        env:
+          DJANGO_SECRET_KEY: test-secret-key-for-ci-only-not-for-production
         run: |
           pytest -v --cov=core --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
