@@ -180,15 +180,33 @@ class TestShareCollectionFlow:
         assert response.status_code == status.HTTP_200_OK
         assert thing_code in response.data["collection_things"]
 
-        # Step 6: Friend reserves thing
-        response = client.post(f"/api/v1/things/{thing_code}/reserve/")
+        # Step 6: Friend requests thing (BookingPeriod flow)
+        response = client.post(f"/api/v1/things/{thing_code}/request/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["thing"]["thing_available"] is False
+        assert response.data["message"] == "Booking request sent"
+        booking_code = response.data["booking_code"]
 
-        # Step 7: Verify owner sees reservation
-        client.credentials(HTTP_AUTHORIZATION=f"Bearer {owner_token.access_token}")
-        response = client.get(f"/api/v1/things/{thing_code}/")
-        assert friend.user_code in response.data["thing_deal"]
+        # Thing status should be TAKEN (awaiting owner approval)
+        from core.models import Thing
+
+        thing = Thing.objects.get(thing_code=thing_code)
+        assert thing.thing_status == "TAKEN"
+
+        # Step 7: Owner accepts the booking via RSVP
+        # Find the accept RSVP
+        accept_rsvp = RSVP.objects.get(
+            rsvp_action="BOOKING_ACCEPT",
+            rsvp_target_code=booking_code,
+        )
+        response = client.get(f"/api/v1/rsvp/{accept_rsvp.rsvp_code}/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["action"] == "BOOKING_ACCEPT"
+
+        # Step 8: Verify thing is now INACTIVE and friend is in thing_deal
+        thing.refresh_from_db()
+        assert thing.thing_status == "INACTIVE"
+        assert thing.thing_available is False
+        assert friend.user_code in thing.thing_deal
 
 
 @pytest.mark.django_db
@@ -371,7 +389,7 @@ class TestCompleteUserJourney:
         charlie_rsvp = RSVP.objects.get(user_email="charlie@example.com")
         client.get(f"/api/v1/auth/verify/{charlie_rsvp.rsvp_code}/")
 
-        # === Bob logs in and reserves an item ===
+        # === Bob logs in and requests an item ===
 
         bob_token = RefreshToken.for_user(bob)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {bob_token.access_token}")
@@ -380,9 +398,18 @@ class TestCompleteUserJourney:
         response = client.get("/api/v1/invited-collections/")
         assert len(response.data) == 1
 
-        # Bob reserves headphones
-        response = client.post(f"/api/v1/things/{thing_codes[0]}/reserve/")
+        # Bob requests headphones (BookingPeriod flow)
+        response = client.post(f"/api/v1/things/{thing_codes[0]}/request/")
         assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Booking request sent"
+        bob_booking_code = response.data["booking_code"]
+
+        # Alice accepts Bob's request
+        bob_accept_rsvp = RSVP.objects.get(
+            rsvp_action="BOOKING_ACCEPT",
+            rsvp_target_code=bob_booking_code,
+        )
+        client.get(f"/api/v1/rsvp/{bob_accept_rsvp.rsvp_code}/")
 
         # === Charlie asks a question ===
 
@@ -406,11 +433,20 @@ class TestCompleteUserJourney:
             format="json",
         )
 
-        # === Charlie reserves the book ===
+        # === Charlie requests the book ===
 
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {charlie_token.access_token}")
-        response = client.post(f"/api/v1/things/{thing_codes[2]}/reserve/")
+        response = client.post(f"/api/v1/things/{thing_codes[2]}/request/")
         assert response.status_code == status.HTTP_200_OK
+        assert response.data["message"] == "Booking request sent"
+        charlie_booking_code = response.data["booking_code"]
+
+        # Alice accepts Charlie's request
+        charlie_accept_rsvp = RSVP.objects.get(
+            rsvp_action="BOOKING_ACCEPT",
+            rsvp_target_code=charlie_booking_code,
+        )
+        client.get(f"/api/v1/rsvp/{charlie_accept_rsvp.rsvp_code}/")
 
         # === Final state verification ===
 

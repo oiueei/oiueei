@@ -9,6 +9,7 @@ An open-source web application for people to share their belongings with friends
 - **UI design**: oiueeiDS (not yet implemented)
 - **Auth**: Magic link authentication (passwordless for users, password enabled for admin access)
 - **Database**: SQLite (dev), PostgreSQL (prod)
+- **Worker**: Cron Job / Heroku Scheduler (not yet implemented) - for booking expiration cleanup
 
 ## Data Models
 
@@ -16,7 +17,7 @@ An open-source web application for people to share their belongings with friends
 |-------|---------|
 | **User** | Users with magic link auth. Custom model with `user_code` as PK (6-char alphanumeric) |
 | **Collection** | Lists of things owned by a user, can be shared via invites |
-| **Thing** | Items in collections. Types: GIFT_THING, SELL_THING, ORDER_THING, RENT_THING, LEND_THING, SHARE_THING |
+| **Thing** | Items in collections. Types: GIFT_THING, SELL_THING, ORDER_THING, RENT_THING, LEND_THING, SHARE_THING. `thing_available` controls visibility (True=visible to invites, False=owner only). `thing_status` controls reservation state (ACTIVE/TAKEN/INACTIVE) |
 | **FAQ** | Questions/answers about things |
 | **Theeeme** | Colour palettes (6 colours) for customising collections |
 | **RSVP** | Magic link tokens (one-time use, 24h expiry) for auth and email actions |
@@ -71,9 +72,7 @@ An open-source web application for people to share their belongings with friends
 | GET | `/api/v1/things/{code}/` | View thing |
 | PUT | `/api/v1/things/{code}/` | Update thing (owner only) |
 | DELETE | `/api/v1/things/{code}/` | Delete thing (owner only) |
-| POST | `/api/v1/things/{code}/reserve/` | Reserve without approval (guest only) |
-| POST | `/api/v1/things/{code}/release/` | Release reservation |
-| POST | `/api/v1/things/{code}/request/` | Request reservation with approval (guest only). For LEND/RENT/SHARE requires `start_date` and `end_date`. For ORDER requires `delivery_date` and `quantity` |
+| POST | `/api/v1/things/{code}/request/` | Request reservation (guest only). Creates BookingPeriod, owner approves via RSVP. For LEND/RENT/SHARE requires `start_date` and `end_date`. For ORDER requires `delivery_date` and `quantity` |
 | GET | `/api/v1/things/{code}/calendar/` | View booking calendar (LEND/RENT/SHARE). Owner sees full details, guest sees only blocked dates |
 | GET | `/api/v1/invited-things/` | List things from invited collections (guest only) |
 
@@ -145,3 +144,15 @@ python manage.py createsuperuser
   user.save()
   ```
   This is required to access `/admin/`. Regular users authenticate via magic link and don't need passwords.
+
+- **Booking expiration cleanup** - PENDING bookings expire after 72 hours but require a scheduled job to mark them as EXPIRED. Call `BookingPeriod.expire_old_pending()` via cron/Heroku Scheduler. Example management command:
+  ```python
+  # core/management/commands/expire_bookings.py
+  from django.core.management.base import BaseCommand
+  from core.models.booking import BookingPeriod
+
+  class Command(BaseCommand):
+      def handle(self, *args, **options):
+          count = BookingPeriod.expire_old_pending()
+          self.stdout.write(f"Expired {count} bookings")
+  ```

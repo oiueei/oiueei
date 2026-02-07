@@ -142,78 +142,9 @@ class ThingDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ThingReserveView(APIView):
-    """
-    POST /api/v1/things/{thing_code}/reserve/
-    Reserve a thing.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, thing_code):
-        try:
-            thing = Thing.objects.get(thing_code=thing_code)
-        except Thing.DoesNotExist:
-            return Response(
-                {"error": "Thing not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if thing.is_owner(request.user.user_code):
-            return Response(
-                {"error": "Cannot reserve your own thing"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not thing.thing_available:
-            return Response(
-                {"error": "Thing is not available"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        thing.reserve(request.user.user_code)
-
-        return Response(
-            {
-                "message": "Thing reserved",
-                "thing": ThingSerializer(thing).data,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-class ThingReleaseView(APIView):
-    """
-    POST /api/v1/things/{thing_code}/release/
-    Release a reservation.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, thing_code):
-        try:
-            thing = Thing.objects.get(thing_code=thing_code)
-        except Thing.DoesNotExist:
-            return Response(
-                {"error": "Thing not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if request.user.user_code not in thing.thing_deal:
-            return Response(
-                {"error": "You have not reserved this thing"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        thing.release(request.user.user_code)
-
-        return Response(
-            {
-                "message": "Reservation released",
-                "thing": ThingSerializer(thing).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+# NOTE: ThingReserveView and ThingReleaseView have been removed.
+# All reservations now go through ThingRequestView which uses the BookingPeriod flow
+# with owner approval via RSVP links.
 
 
 class InvitedThingsView(APIView):
@@ -239,7 +170,8 @@ class InvitedThingsView(APIView):
         # Remove duplicates
         thing_codes = list(set(thing_codes))
 
-        # Get things
-        things = Thing.objects.filter(thing_code__in=thing_codes)
+        # Get things that are available (thing_available=True)
+        # Hidden things (thing_available=False) are only visible to owner
+        things = Thing.objects.filter(thing_code__in=thing_codes, thing_available=True)
         serializer = ThingSerializer(things, many=True)
         return Response(serializer.data)

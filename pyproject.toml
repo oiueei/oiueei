@@ -2,19 +2,19 @@
 line-length = 100
 target-version = ['py312']
 include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
+extend-exclude = '''
+(
+    migrations
     | \.venv
-    | migrations
-    | __pycache__
-)/
+    | venv
+)
 '''
 
 [tool.isort]
 profile = "black"
 line_length = 100
-skip = [".git", ".venv", "migrations", "__pycache__"]
+skip = [".git", ".venv", "venv", "migrations", "__pycache__"]
+skip_glob = ["*/migrations/*"]
 
 [tool.coverage.run]
 source = ["core"]

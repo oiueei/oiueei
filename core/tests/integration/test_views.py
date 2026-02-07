@@ -349,6 +349,30 @@ class TestCollectionViews:
         assert user2.user_code not in collection.collection_invites
         assert collection.collection_code not in user2.user_invited_collections
 
+    def test_remove_invite_sends_notification_email(
+        self, authenticated_client, user, user2, collection
+    ):
+        """Removing invite should send notification email to removed user."""
+        from django.core import mail
+
+        # First add user2 to collection invites
+        collection.add_invite(user2.user_code)
+        user2.user_invited_collections.append(collection.collection_code)
+        user2.save()
+
+        response = authenticated_client.delete(
+            f"/api/v1/collections/{collection.collection_code}/invite/",
+            {"user_code": user2.user_code},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Check email was sent to removed user
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [user2.user_email]
+        assert "revocado" in mail.outbox[0].subject
+        assert collection.collection_headline in mail.outbox[0].subject
+
     def test_remove_invite_denied_for_non_owner(self, user, user2, collection):
         """Should deny removing invite for non-owner."""
         from rest_framework.test import APIClient
@@ -534,8 +558,8 @@ class TestThingViews:
         response = authenticated_client.delete(f"/api/v1/things/{thing.thing_code}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
-    def test_reserve_thing(self, authenticated_client, user, user2, thing, collection):
-        """Should reserve thing."""
+    def test_request_thing(self, authenticated_client, user, user2, thing, collection):
+        """Should request thing via BookingPeriod flow."""
         # Share collection with user2 first
         collection.add_invite(user2.user_code)
         user2.user_invited_collections.append(collection.collection_code)
@@ -549,14 +573,21 @@ class TestThingViews:
         refresh = RefreshToken.for_user(user2)
         client2.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
 
-        response = client2.post(f"/api/v1/things/{thing.thing_code}/reserve/")
+        # Use /request/ endpoint (BookingPeriod flow)
+        response = client2.post(f"/api/v1/things/{thing.thing_code}/request/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["thing"]["thing_available"] is False
+        assert response.data["message"] == "Booking request sent"
+        assert "booking_code" in response.data
 
-    def test_cannot_reserve_own_thing(self, authenticated_client, thing):
-        """Should not reserve own thing."""
-        response = authenticated_client.post(f"/api/v1/things/{thing.thing_code}/reserve/")
+        # For GIFT_THING, status changes to TAKEN (awaiting owner approval)
+        thing.refresh_from_db()
+        assert thing.thing_status == "TAKEN"
+
+    def test_cannot_request_own_thing(self, authenticated_client, thing):
+        """Should not request own thing."""
+        response = authenticated_client.post(f"/api/v1/things/{thing.thing_code}/request/")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error"] == "Cannot request your own thing"
 
 
 @pytest.mark.django_db
@@ -1102,3 +1133,123 @@ class TestReservationViews:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["error"] == "You already have a pending request for this thing"
+
+
+@pytest.mark.django_db
+class TestThingAvailabilityVisibility:
+    """Tests for thing_available visibility rules.
+
+    thing_available controls visibility:
+    - True: Visible to owner AND all collection_invites
+    - False: Visible ONLY to owner (hidden from invites)
+    """
+
+    def _get_client_for_user(self, user):
+        """Create an authenticated client for a user."""
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+        return client
+
+    def test_hidden_thing_visible_to_owner(self, authenticated_client, thing):
+        """Owner can view their thing even when thing_available=False."""
+        thing.thing_available = False
+        thing.save()
+
+        response = authenticated_client.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["thing_code"] == thing.thing_code
+
+    def test_hidden_thing_not_visible_to_invited_user(self, user, user2, thing, collection):
+        """Invited user cannot view thing when thing_available=False."""
+        # Invite user2 to collection
+        collection.add_invite(user2.user_code)
+
+        # Hide the thing
+        thing.thing_available = False
+        thing.save()
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_visible_thing_visible_to_invited_user(self, user, user2, thing, collection):
+        """Invited user can view thing when thing_available=True."""
+        # Invite user2 to collection
+        collection.add_invite(user2.user_code)
+
+        # Ensure thing is visible
+        thing.thing_available = True
+        thing.save()
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get(f"/api/v1/things/{thing.thing_code}/")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_invited_things_excludes_hidden(self, user, user2, thing, collection):
+        """Invited things endpoint should exclude hidden things."""
+        from core.models import Thing
+
+        # Invite user2 to collection
+        collection.add_invite(user2.user_code)
+
+        # Create a second thing that is hidden
+        hidden_thing = Thing.objects.create(
+            thing_code="HIDDN1",
+            thing_type="GIFT_THING",
+            thing_owner=user.user_code,
+            thing_headline="Hidden Thing",
+            thing_available=False,
+        )
+        collection.add_thing(hidden_thing.thing_code)
+
+        client2 = self._get_client_for_user(user2)
+        response = client2.get("/api/v1/invited-things/")
+        assert response.status_code == status.HTTP_200_OK
+
+        # Should only see the visible thing, not the hidden one
+        thing_codes = [t["thing_code"] for t in response.data]
+        assert thing.thing_code in thing_codes
+        assert hidden_thing.thing_code not in thing_codes
+
+    def test_owner_sees_all_things_in_own_list(self, authenticated_client, user, collection):
+        """Owner's thing list includes hidden things."""
+        from core.models import Thing
+
+        # Create hidden thing
+        hidden_thing = Thing.objects.create(
+            thing_code="HIDDN2",
+            thing_type="GIFT_THING",
+            thing_owner=user.user_code,
+            thing_headline="Owner Hidden Thing",
+            thing_available=False,
+        )
+        user.user_things.append(hidden_thing.thing_code)
+        user.save()
+
+        response = authenticated_client.get("/api/v1/things/")
+        assert response.status_code == status.HTTP_200_OK
+
+        # Owner should see all their things including hidden
+        thing_codes = [t["thing_code"] for t in response.data]
+        assert hidden_thing.thing_code in thing_codes
+
+    def test_can_view_method_respects_thing_available(self, user, user2, thing, collection):
+        """Thing.can_view() respects thing_available flag."""
+        collection.add_invite(user2.user_code)
+
+        # When visible, invited user can view
+        thing.thing_available = True
+        thing.save()
+        assert thing.can_view(user2.user_code) is True
+
+        # When hidden, invited user cannot view
+        thing.thing_available = False
+        thing.save()
+        assert thing.can_view(user2.user_code) is False
+
+        # Owner can always view
+        assert thing.can_view(user.user_code) is True

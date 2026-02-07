@@ -11,6 +11,15 @@ from core.utils import generate_id
 class Thing(models.Model):
     """
     An item in a collection (gift, sale, order, rent, lend, or share).
+
+    Visibility (thing_available):
+    - True: Visible to owner AND all collection_invites
+    - False: Visible ONLY to owner (hidden from invites)
+
+    Reservation status (thing_status):
+    - ACTIVE: Available for reservation
+    - TAKEN: Awaiting owner confirmation (not available for new requests)
+    - INACTIVE: No longer available (completed or disabled)
     """
 
     TYPE_CHOICES = [
@@ -83,10 +92,23 @@ class Thing(models.Model):
     def can_view(self, user_code):
         """
         Check if the given user can view this thing.
-        Returns True if user is owner or is invited to a collection containing this thing.
+
+        Visibility rules:
+        - Owner can always view their own things
+        - Invited users can only view if thing_available=True
+
+        Args:
+            user_code: The user_code to check
+
+        Returns:
+            True if user is owner, or is invited and thing is available
         """
         if self.is_owner(user_code):
             return True
+
+        # If thing is not available, only owner can see it
+        if not self.thing_available:
+            return False
 
         # Import here to avoid circular import
         from core.models import Collection

@@ -7,7 +7,7 @@ from .collections import (
     InvitedCollectionsView,
 )
 from .faq import FAQAnswerView, FAQDetailView, FAQVisibilityView, ThingFAQListView
-from .things import ThingDetailView, ThingListView, ThingReleaseView, ThingReserveView
+from .things import ThingDetailView, ThingListView
 from .users import UserDetailView
 
 __all__ = [
@@ -21,8 +21,6 @@ __all__ = [
     "InvitedCollectionsView",
     "ThingListView",
     "ThingDetailView",
-    "ThingReserveView",
-    "ThingReleaseView",
     "ThingFAQListView",
     "FAQDetailView",
     "FAQAnswerView",

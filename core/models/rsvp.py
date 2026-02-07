@@ -19,10 +19,11 @@ class RSVP(models.Model):
     Used for:
     - MAGIC_LINK: Passwordless authentication
     - COLLECTION_INVITE: Invitation to view a collection
-    - RESERVATION_ACCEPT: Accept a reservation request (GIFT/SELL/ORDER)
-    - RESERVATION_REJECT: Reject a reservation request
-    - BOOKING_ACCEPT: Accept a booking period (LEND/RENT/SHARE)
-    - BOOKING_REJECT: Reject a booking period
+    - BOOKING_ACCEPT: Accept a booking request (all thing types)
+    - BOOKING_REJECT: Reject a booking request (all thing types)
+
+    All booking actions (GIFT, SELL, ORDER, LEND, RENT, SHARE) use the unified
+    BOOKING_ACCEPT/BOOKING_REJECT actions via the BookingPeriod model.
 
     Expires after MAGIC_LINK_EXPIRY_HOURS (default 24 hours).
     Deleted after one-time use.

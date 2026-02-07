@@ -17,13 +17,7 @@ from .views.collections import (
 )
 from .views.faq import FAQAnswerView, FAQDetailView, FAQVisibilityView, ThingFAQListView
 from .views.reservations import ThingRequestView
-from .views.things import (
-    InvitedThingsView,
-    ThingDetailView,
-    ThingListView,
-    ThingReleaseView,
-    ThingReserveView,
-)
+from .views.things import InvitedThingsView, ThingDetailView, ThingListView
 from .views.users import UserDetailView
 
 urlpatterns = [
@@ -58,8 +52,7 @@ urlpatterns = [
     path("things/", ThingListView.as_view(), name="thing-list"),
     path("invited-things/", InvitedThingsView.as_view(), name="invited-things"),
     path("things/<str:thing_code>/", ThingDetailView.as_view(), name="thing-detail"),
-    path("things/<str:thing_code>/reserve/", ThingReserveView.as_view(), name="thing-reserve"),
-    path("things/<str:thing_code>/release/", ThingReleaseView.as_view(), name="thing-release"),
+    # NOTE: /reserve/ and /release/ endpoints removed - use /request/ with BookingPeriod flow
     path("things/<str:thing_code>/request/", ThingRequestView.as_view(), name="thing-request"),
     path(
         "things/<str:thing_code>/calendar/",

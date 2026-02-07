@@ -422,7 +422,27 @@ The `Thing` model represents an item in a collection. Things can be gifts, items
 | `thing_faq` | JSONField | No | Array of faq_codes for this thing |
 | `thing_fee` | DecimalField | No | Price/fee (for SELL/RENT types) |
 | `thing_deal` | JSONField | No | Array of user_codes who reserved |
-| `thing_available` | BooleanField | No | Whether thing is available (default: True) |
+| `thing_available` | BooleanField | No | Visibility flag (default: True) |
+
+### Visibility vs Reservation Status
+
+**IMPORTANT:** `thing_available` and `thing_status` serve different purposes:
+
+| Field | Purpose | Values |
+|-------|---------|--------|
+| `thing_available` | **Visibility control** | `True` = visible to owner + invites, `False` = visible only to owner |
+| `thing_status` | **Reservation state** | `ACTIVE` = can be reserved, `TAKEN` = pending confirmation, `INACTIVE` = no longer available |
+
+**Visibility (`thing_available`):**
+- `True`: Thing is visible to the owner AND all users in `collection_invites`
+- `False`: Thing is visible ONLY to the owner (hidden from all invites)
+
+**Reservation Status (`thing_status`):**
+- `ACTIVE`: Available for new reservation requests
+- `TAKEN`: Awaiting owner confirmation (not available for new requests)
+- `INACTIVE`: Completed or disabled, no longer available
+
+These fields are **independent**: A thing can be `thing_available=True` but `thing_status=INACTIVE` (visible but not reservable), or `thing_available=False` but `thing_status=ACTIVE` (hidden but technically reservable if someone had the link).
 
 ### Thing Types
 

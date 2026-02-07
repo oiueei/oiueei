@@ -301,12 +301,29 @@ class CollectionInviteView(APIView):
         collection.collection_invites.remove(user_code)
         collection.save(update_fields=["collection_invites"])
 
-        # Remove from user's shared_collections
+        # Remove from user's shared_collections and send notification
         try:
             user = User.objects.get(user_code=user_code)
             if collection_code in user.user_invited_collections:
                 user.user_invited_collections.remove(collection_code)
                 user.save(update_fields=["user_invited_collections"])
+
+            # Send notification email to removed user
+            owner_name = request.user.user_name or request.user.user_email
+            send_mail(
+                subject=f"Tu acceso a '{collection.collection_headline}' ha sido revocado",
+                message=f"{owner_name} ha revocado tu acceso a la colección "
+                f"'{collection.collection_headline}'.",
+                from_email=None,
+                recipient_list=[user.user_email],
+                html_message=f"""
+                <html>
+                <p>{owner_name} ha revocado tu acceso a:</p>
+                <p><strong>{collection.collection_headline}</strong></p>
+                <p>Ya no podrás ver el contenido de esta colección.</p>
+                </html>
+                """,
+            )
         except User.DoesNotExist:
             pass
 
