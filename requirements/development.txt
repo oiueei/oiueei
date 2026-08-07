@@ -30,5 +30,5 @@ pre-commit==4.6.1
 #
 # Same versions as production.txt on purpose — testing against a different
 # driver than the one that ships defeats the point.
-dj-database-url==2.3.0
+dj-database-url==3.1.2
 psycopg2-binary==2.9.12
