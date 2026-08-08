@@ -18,7 +18,7 @@
 # confirm the new pin is clean. Dependabot opens these as ordinary PRs.
 
 # Core
-Django==5.2.17
+Django==6.0.8
 djangorestframework==3.17.2
 djangorestframework-simplejwt==5.5.1
 django-cors-headers==4.9.0
