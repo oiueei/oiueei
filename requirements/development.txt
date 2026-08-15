@@ -18,7 +18,7 @@ factory-boy==3.3.3
 time-machine==2.19.0
 
 # Linting & formatting (Ruff replaces black + isort + flake8)
-ruff==0.15.22
+ruff==0.16.2
 pre-commit==4.6.1
 
 # PostgreSQL, so the suite can run on the engine production runs on.
