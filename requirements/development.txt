@@ -12,7 +12,7 @@
 # requirements/production.txt, so nothing ever looked. pytest-cov follows to 7.x
 # for the same major.
 pytest==9.1.1
-pytest-django==4.13.0
+pytest-django==4.14.0
 pytest-cov==7.1.0
 factory-boy==3.3.3
 time-machine==2.19.0
