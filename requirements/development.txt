@@ -19,7 +19,7 @@ time-machine==2.19.0
 
 # Linting & formatting (Ruff replaces black + isort + flake8)
 ruff==0.15.22
-pre-commit==4.6.1
+pre-commit==4.6.2
 
 # PostgreSQL, so the suite can run on the engine production runs on.
 #
