@@ -19,13 +19,13 @@
 
 # Core
 Django==5.2.17
-djangorestframework==3.17.2
+djangorestframework==3.18.0
 djangorestframework-simplejwt==5.5.1
 django-cors-headers==4.9.0
 django-ratelimit==4.1.0
 django-otp==1.7.0
 
 # Utils
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 cloudinary==1.45.0
 requests==2.34.2
