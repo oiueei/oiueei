@@ -12,14 +12,14 @@
 # requirements/production.txt, so nothing ever looked. pytest-cov follows to 7.x
 # for the same major.
 pytest==9.1.1
-pytest-django==4.13.0
+pytest-django==4.14.0
 pytest-cov==7.1.0
 factory-boy==3.3.3
-time-machine==2.19.0
+time-machine==3.4.0
 
 # Linting & formatting (Ruff replaces black + isort + flake8)
-ruff==0.15.22
-pre-commit==4.6.1
+ruff==0.16.3
+pre-commit==4.6.2
 
 # PostgreSQL, so the suite can run on the engine production runs on.
 #
@@ -30,5 +30,5 @@ pre-commit==4.6.1
 #
 # Same versions as production.txt on purpose — testing against a different
 # driver than the one that ships defeats the point.
-dj-database-url==2.3.0
+dj-database-url==3.1.2
 psycopg2-binary==2.9.12
