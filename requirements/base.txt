@@ -19,16 +19,16 @@
 
 # Core
 Django==5.2.17
-djangorestframework==3.17.2
+djangorestframework==3.18.0
 djangorestframework-simplejwt==5.5.1
 django-cors-headers==4.9.0
 django-ratelimit==4.1.0
 django-otp==1.7.0
 
 # Utils
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 # boto3 talks to the S3-compatible object storage that is replacing Cloudinary.
 # Both live here until the last Cloudinary call site is gone (see core/services/storage.py).
 # botocore ships with it and is not pinned separately: boto3 already pins it exactly.
-boto3==1.43.78
+boto3==1.43.80
 requests==2.34.2
