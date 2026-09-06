@@ -51,6 +51,11 @@ export default function AddThingPage() {
   const capabilities = useCapabilities();
   const [collectionAllowedTypes, setCollectionAllowedTypes] = useState([]);
   const [collectionTags, setCollectionTags] = useState([]);
+  // A member contributing to a COMMUNITY collection they were invited to may
+  // offer any type its (vetted) owner allow-listed, whatever this deployment's
+  // creator policy says about them personally — the same exception the backend
+  // applies in `community_contribution_types` (core/services/creator_policy).
+  const [contributingToCommunity, setContributingToCommunity] = useState(false);
   const [tags, setTags] = useState([]);
 
   useEffect(() => {
@@ -61,6 +66,7 @@ export default function AddThingPage() {
         setCollectionHeadline(data.headline || '');
         const allowed = data.allowed_thing_types || [];
         setCollectionAllowedTypes(allowed);
+        setContributingToCommunity(data.mode === 'COMMUNITY' && !!data.is_member);
         setCollectionTags(data.tags || []);
         // If the allowlist names a single type, pre-select it so the form
         // immediately shows the right downstream fields.
@@ -144,21 +150,28 @@ export default function AddThingPage() {
   // Theeeme colors from localStorage (set by HomePage on login)
   const { tc, btnStyle } = useTheeeme();
 
-  // The collection's own allowlist applied, the deployment's policy not yet —
-  // that difference is exactly what the notice under the selector explains.
-  const typeCatalogue = TYPE_VALUES.filter(
-    (v) => collectionAllowedTypes.length === 0 || collectionAllowedTypes.includes(v)
-  ).map((v) => ({ label: t('types.' + v), value: v }));
   const typeOptions = (() => {
     return TYPE_VALUES.filter((v) => {
       // Per-collection allowlist (set on Create/Edit). Empty = no restriction.
       if (collectionAllowedTypes.length > 0 && !collectionAllowedTypes.includes(v)) return false;
+      // A type this COMMUNITY collection's owner explicitly allow-listed is open
+      // to its invited members regardless of the deployment's own policy — an
+      // empty allowlist is not "all", so this falls through to `isOfferable`.
+      if (contributingToCommunity && collectionAllowedTypes.includes(v)) return true;
       // The deployment's own policy, which is a different question from the
       // owner's allowlist: that one is about this collection, this one is about
       // whether the account may offer the verb anywhere here at all.
       return isOfferable(capabilities, 'thing_types', v);
     });
   })().map((v) => ({ label: t('types.' + v), value: v }));
+  // What the "needs approval" notice diffs against: the collection's own
+  // allowlist applied, the deployment's policy not yet — except a type an
+  // invited member may already contribute here is not withheld, so it drops out.
+  const approvalCatalogue = TYPE_VALUES.filter(
+    (v) => collectionAllowedTypes.length === 0 || collectionAllowedTypes.includes(v)
+  )
+    .filter((v) => !(contributingToCommunity && collectionAllowedTypes.includes(v)))
+    .map((v) => ({ label: t('types.' + v), value: v }));
 
   return (
     <PageLayout
@@ -172,7 +185,7 @@ export default function AddThingPage() {
           theeemeColor01={tc.color_01}
           errors={errors}
           typeOptions={typeOptions}
-          typeCatalogue={typeCatalogue}
+          typeCatalogue={approvalCatalogue}
           showTypeSelector
           type={type}
           setType={setType}

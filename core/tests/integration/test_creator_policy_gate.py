@@ -204,6 +204,167 @@ class TestTheGateCannotBeWalkedAroundByEditing:
 
 
 @pytest.mark.django_db
+class TestContributingToACommunityGroupIsNotInitiating:
+    """The gate is on *initiating* — opening a group, offering a verb of your
+    own. It is not on a member adding a thing to a COMMUNITY collection they
+    were invited to, of a type its owner explicitly allow-listed.
+
+    That owner is the vetted party: a deployment narrow enough to hold COMMUNITY
+    creation behind a request vetted *them*, and putting the verb in
+    `allowed_thing_types` is them opening their group to it. The member is
+    acting under that, not around it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _narrowed_deployment(self, settings):
+        settings.CREATOR_POLICY = RESTRICTED
+
+    @pytest.fixture
+    def lending_group(self, user, user2):
+        """A COMMUNITY collection `user` owns and opened to loans, `user2` an
+        invited member of it. `user2` has asked nobody for anything."""
+        coll = Collection.objects.create(
+            owner=user,
+            headline="Tool library",
+            mode=Collection.Mode.COMMUNITY,
+            allowed_thing_types=["LEND_THING"],
+        )
+        coll.invites.add(user2)
+        return coll
+
+    def test_an_invited_member_may_add_an_allow_listed_verb(
+        self, authenticated_client2, lending_group
+    ):
+        response = authenticated_client2.post(
+            "/api/v1/things/",
+            {
+                "type": "LEND_THING",
+                "headline": "A ladder",
+                "thumbnail": "img/x",
+                "collection_code": lending_group.code,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert lending_group.things.filter(headline="A ladder").exists()
+
+    def test_the_bulk_import_follows_the_same_rule(self, authenticated_client2, lending_group):
+        response = authenticated_client2.post(
+            BULK_URL.format(code=lending_group.code),
+            {"rows": [{"type": "LEND_THING", "headline": "Drill"}]},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert lending_group.things.filter(headline="Drill").exists()
+
+    def test_a_member_may_retype_their_contribution_into_an_allow_listed_verb(
+        self, authenticated_client2, lending_group, user2
+    ):
+        thing = Thing.objects.create(owner=user2, headline="Was a gift", type="GIFT_THING")
+        lending_group.things.add(thing)
+
+        response = authenticated_client2.patch(
+            f"/api/v1/things/{thing.code}/",
+            {"type": "LEND_THING", "thumbnail": "img/x"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        thing.refresh_from_db()
+        assert thing.type == Thing.Type.LEND_THING
+
+    def test_a_verb_the_owner_did_not_allow_list_is_still_refused(
+        self, authenticated_client2, lending_group
+    ):
+        """RENT is not in this collection's list, so the member has no standing
+        to bring one in — the deployment policy answers, request URL and all."""
+        response = authenticated_client2.post(
+            "/api/v1/things/",
+            {
+                "type": "RENT_THING",
+                "headline": "A drill",
+                "thumbnail": "img/x",
+                "collection_code": lending_group.code,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert REQUEST_URL in str(response.data)
+
+    def test_an_empty_allowlist_is_not_a_blanket_yes(self, authenticated_client2, user, user2):
+        """A COMMUNITY collection with no type restriction: the owner made no
+        choice, so an un-vetted member stays on the deployment's open half."""
+        coll = Collection.objects.create(
+            owner=user, headline="Open group", mode=Collection.Mode.COMMUNITY
+        )
+        coll.invites.add(user2)
+
+        response = authenticated_client2.post(
+            "/api/v1/things/",
+            {
+                "type": "LEND_THING",
+                "headline": "A ladder",
+                "thumbnail": "img/x",
+                "collection_code": coll.code,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not Thing.objects.filter(headline="A ladder").exists()
+
+    def test_a_non_member_gets_nothing_from_the_exception(self, authenticated_client2, user, user2):
+        """Not invited: the group is not theirs to contribute to. The refusal
+        also does not confirm the collection exists — same 403 as a bad code."""
+        coll = Collection.objects.create(
+            owner=user,
+            headline="Tool library",
+            mode=Collection.Mode.COMMUNITY,
+            allowed_thing_types=["LEND_THING"],
+        )
+
+        response = authenticated_client2.post(
+            "/api/v1/things/",
+            {
+                "type": "LEND_THING",
+                "headline": "A ladder",
+                "thumbnail": "img/x",
+                "collection_code": coll.code,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not Thing.objects.filter(headline="A ladder").exists()
+
+    def test_the_owner_is_still_initiating_in_their_own_group(self, authenticated_client, user):
+        """The owner adding a loan to their own COMMUNITY collection is offering
+        a verb of their own — the exception is for the members they invited."""
+        coll = Collection.objects.create(
+            owner=user,
+            headline="Tool library",
+            mode=Collection.Mode.COMMUNITY,
+            allowed_thing_types=["LEND_THING"],
+        )
+
+        response = authenticated_client.post(
+            "/api/v1/things/",
+            {
+                "type": "LEND_THING",
+                "headline": "A ladder",
+                "thumbnail": "img/x",
+                "collection_code": coll.code,
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
 class TestTheBulkImportObeysTheSamePolicy:
     """The CSV path is the third way to create a thing, and the easiest to forget."""
 
