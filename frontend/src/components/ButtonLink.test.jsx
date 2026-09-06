@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
 import { describe, test, expect } from 'vitest';
+import fs from 'node:fs';
 import ButtonLink from './ButtonLink';
 
 /**
@@ -110,6 +111,23 @@ describe('ButtonLink', () => {
   test('the href is real, so the browser has somewhere to open', () => {
     renderLink();
     expect(screen.getByRole('link', { name: 'Go' })).toHaveAttribute('href', '/somewhere');
+  });
+
+  // jsdom applies no stylesheet, so this is a source sweep — the same shape as
+  // `no Select speaks Finnish`. The <a> `ButtonLink` renders IS the button:
+  // `hds-button--primary`'s background, border and padding are on it. Any rule
+  // that takes its box away (`display: contents`, `display: none`, an unsized
+  // replacement) paints none of them — and drops it out of the a11y tree. That
+  // is exactly what `.thing-card-buttons a { display: contents }` did from 2026-03
+  // (harmless when the <a> was a `<Link><Button>` wrapper) until 2026-08, when
+  // the migration made the <a> the button and the card's primary "Edit" went
+  // quietly weak. Keep the box.
+  test('no App.css rule collapses a card button link out of its own box', () => {
+    // Vitest runs from the frontend root (see selectLanguage.test.jsx). Strip
+    // comments first — the removal is explained in one, pattern and all.
+    const css = fs.readFileSync('src/App.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/\.thing-card-buttons\s+a\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(rule).not.toMatch(/display:\s*(contents|none)/);
   });
 });
 

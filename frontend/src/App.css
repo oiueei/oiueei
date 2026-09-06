@@ -424,9 +424,15 @@ div[class*='Linkbox-module_linkbox'] {
   padding-top: var(--spacing-s);
 }
 
-.thing-card-buttons a {
-  display: contents;
-}
+/* No `.thing-card-buttons a { display: contents }` here. It was added in 2026-03
+   to flatten a `<Link><Button>` wrapper — back then the <a> was a pure wrapper
+   and collapsing its box was harmless. The 2026-08 `ButtonLink` migration made
+   the <a> *be* the button: `hds-button--primary`'s background, border and
+   padding all sit on it, and `display: contents` paints none of them (and drops
+   the element out of the a11y tree, see `.status-region:empty` below). The
+   card's primary "Edit" was rendering as a bare text link, weaker than the same
+   `<ButtonLink style={btnStyle}>` in the collection hero. `.button-link--full`
+   gives it its width; the rest is HDS's own button CSS, left to do its job. */
 
 /* Global button typography */
 .hds-button {

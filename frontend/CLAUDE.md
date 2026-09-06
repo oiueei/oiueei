@@ -726,6 +726,14 @@ Three things about it are load-bearing:
   address even if we wanted it.
 - **`fullWidth` is ours** (`.button-link--full`, one declaration) — `Link` has no
   such prop, and the base class already centres the label.
+- **The `<a>` it renders IS the button** — `hds-button--primary`'s background,
+  border and padding sit on the `<a>` itself, with a `<span>` inside for the
+  label. So a rule that removes the `<a>`'s box (`display: contents`, `display:
+  none`) paints none of that and drops it out of the a11y tree. This bit the
+  card grid: `.thing-card-buttons a { display: contents }` was added in 2026-03
+  to flatten the then-`<Link><Button>` wrapper, and the 2026-08 migration left
+  it stripping the card's primary "Edit" to a bare text link. Removed, with a
+  source-sweep guard in `ButtonLink.test.jsx`.
 - **Only a plain left click is intercepted.** A cmd/ctrl/shift/alt or middle click
   falls through to the real `href`, so open-in-new-tab keeps working. Losing that is
   the usual price of hand-rolling this, and it is exactly what a real link buys.
