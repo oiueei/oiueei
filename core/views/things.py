@@ -26,7 +26,11 @@ from core.serializers import (
     ThingUpdateSerializer,
 )
 from core.serializers.thing import optimise_thing_queryset
-from core.services.creator_policy import capabilities_for, thing_type_denial
+from core.services.creator_policy import (
+    capabilities_for,
+    community_contribution_types,
+    thing_type_denial,
+)
 from core.utils import parse_localized
 from core.views._helpers import type_validity_error, viewer_code
 
@@ -139,23 +143,26 @@ class ThingViewSet(ModelViewSet):
         # / 400 ValidationError) and handled by the default exception handler —
         # no instance-state protocol, so create() stays a plain 201 path.
         collection_code = self.request.data.get("collection_code")
-        collection = None
+        collection = (
+            Collection.objects.filter(code=collection_code).first() if collection_code else None
+        )
 
         thing_type = serializer.validated_data.get("type", Thing.Type.GIFT_THING)
 
-        # Whether this deployment offers the verb at all, asked before anything
-        # about the collection: the answer is about the person, not the place,
-        # so a refusal must not depend on which collection was named (and must
-        # not leak whether that collection exists).
+        # Whether this deployment offers the verb at all. The one exception is a
+        # member contributing an owner-allow-listed type to a COMMUNITY group
+        # they were invited to (`community_contribution_types`). It is confirmed
+        # positively against the resolved collection, so a refusal still never
+        # turns on — or reveals — a collection that does not exist or that the
+        # person has no standing in: both still fall through to the same 403,
+        # before the 404/permission checks below run.
         denial = thing_type_denial(self.request.user, thing_type)
-        if denial:
+        if denial and thing_type not in community_contribution_types(collection, self.request.user):
             raise PermissionDenied(denial)
 
         if collection_code:
-            try:
-                collection = Collection.objects.get(code=collection_code)
-            except Collection.DoesNotExist:
-                raise NotFound("Collection not found") from None
+            if collection is None:
+                raise NotFound("Collection not found")
             if not collection.can_add_thing(self.request.user.code):
                 raise PermissionDenied(
                     "You do not have permission to add things to this collection"
@@ -221,14 +228,23 @@ class ThingViewSet(ModelViewSet):
         thing = serializer.instance
         new_type = serializer.validated_data.get("type", thing.type)
         if new_type != thing.type:
+            collections = list(thing.collections.all())
             # Only on a change: a thing already offered under a verb the policy
             # has since stopped handing out stays editable by its owner. The
             # gate is on creating that state, not on living in it — otherwise
             # narrowing a deployment would freeze the things people already own.
+            # Same COMMUNITY-contribution exception as create: a member may
+            # re-type their contribution into another verb their group's owner
+            # allow-listed. Every collection the thing sits in has to allow it —
+            # a thing also in the member's own collection is still them
+            # initiating there.
             denial = thing_type_denial(self.request.user, new_type)
-            if denial:
+            contributing = bool(collections) and all(
+                new_type in community_contribution_types(c, self.request.user) for c in collections
+            )
+            if denial and not contributing:
                 raise PermissionDenied(denial)
-            for collection in list(thing.collections.all()) or [None]:
+            for collection in collections or [None]:
                 err = type_validity_error(new_type, collection)
                 if err:
                     raise ValidationError({"type": err})
@@ -315,6 +331,11 @@ class ThingBulkCreateView(APIView):
         # query per row, up to MAX_ROWS of them, on an endpoint whose whole
         # point is importing a hundred things at once.
         capabilities = capabilities_for(request.user)
+        # Verbs the (vetted) owner has opened this COMMUNITY group to: the
+        # deployment's own policy steps aside for those, exactly as on the
+        # single-create path. Resolved once for the batch — it turns on
+        # (this user, this collection), never on the row.
+        community_free = community_contribution_types(collection, request.user)
         for index, row in enumerate(rows):
             serializer = ThingBulkRowSerializer(data=row)
             if not serializer.is_valid():
@@ -326,10 +347,11 @@ class ThingBulkCreateView(APIView):
             # endpoint's contract is that one response names every bad row, and
             # an importer who used a withheld verb in row 40 of 100 needs to be
             # told which rows to fix, not just that something was refused.
-            row_denial = thing_type_denial(request.user, thing_type, capabilities=capabilities)
-            if row_denial:
-                errors.append({"row": index, "errors": {"type": [row_denial]}})
-                continue
+            if thing_type not in community_free:
+                row_denial = thing_type_denial(request.user, thing_type, capabilities=capabilities)
+                if row_denial:
+                    errors.append({"row": index, "errors": {"type": [row_denial]}})
+                    continue
             type_error = type_validity_error(thing_type, collection)
             if type_error:
                 errors.append({"row": index, "errors": {"type": [type_error]}})

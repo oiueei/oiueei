@@ -199,3 +199,62 @@ describe('AddThingPage — what the form sends', () => {
     expect(await screen.findByText(/[Tt]oo many/)).toBeInTheDocument();
   });
 });
+
+describe('AddThingPage — a member contributing to a COMMUNITY collection', () => {
+  // A deployment may vet who offers LEND/RENT of their own — but a member
+  // invited to a COMMUNITY collection whose (vetted) owner allow-listed LEND
+  // may add one there (core/services/creator_policy). The picker has to reflect
+  // that, and not warn about a verb that is not actually withheld here.
+  const NARROWED = {
+    collection_modes: ['PROPRIETARY'],
+    thing_types: ['GIFT_THING', 'SELL_THING'],
+    request_url: '/request-access/',
+  };
+
+  const mockNarrowed = (coll) =>
+    apiFetch.mockImplementation((url, opts) => {
+      if (opts?.method === 'POST')
+        return Promise.resolve({ ok: true, status: 201, json: async () => ({}) });
+      if (url.includes('/auth/me/'))
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ capabilities: NARROWED }),
+        });
+      return Promise.resolve({ ok: true, status: 200, json: async () => coll });
+    });
+
+  beforeEach(() => {
+    // useCapabilities caches per account at module scope; a fresh code keeps
+    // this from inheriting the null capabilities the tests above leave behind.
+    localStorage.setItem('userCode', `MEMBER${Math.random()}`);
+  });
+
+  test('an allow-listed verb is offered even though the deployment withholds it', async () => {
+    mockNarrowed(
+      collection({
+        mode: 'COMMUNITY',
+        is_member: true,
+        allowed_thing_types: ['LEND_THING', 'GIFT_THING'],
+      })
+    );
+    renderPage();
+    await openTypePicker();
+
+    expect(await screen.findByRole('option', { name: 'Lend' })).toBeInTheDocument();
+    // And the "needs approval" notice does not name it — it is not withheld here.
+    expect(screen.queryByText(/need approval/i)).toBeNull();
+  });
+
+  test('an empty allowlist still holds an un-vetted member to the open half', async () => {
+    // The owner made no type choice, so the member keeps GIFT/SELL and the
+    // notice explains the rest — exactly as in a proprietary collection.
+    mockNarrowed(collection({ mode: 'COMMUNITY', is_member: true, allowed_thing_types: [] }));
+    renderPage();
+    await openTypePicker();
+
+    expect(screen.getByRole('option', { name: 'Gift' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Lend' })).toBeNull();
+    expect(await screen.findByText(/need approval/i)).toBeInTheDocument();
+  });
+});

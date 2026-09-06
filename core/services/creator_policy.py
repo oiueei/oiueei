@@ -169,6 +169,13 @@ def thing_type_denial(user, thing_type, capabilities=None) -> str | None:
 
     `capabilities` as above: pass one when calling in a loop over a single
     user, omit it otherwise.
+
+    This answers only the personal question — *may this account offer this verb
+    on its own?* A member contributing to someone else's COMMUNITY collection
+    is a separate case the enforcement points carve out with
+    `community_contribution_types()` below; it is not folded in here because
+    the bulk importer holds one `capabilities` for a whole CSV and would
+    otherwise re-run the membership query per row.
     """
     caps = capabilities_for(user) if capabilities is None else capabilities
     if thing_type in caps.thing_types:
@@ -178,6 +185,43 @@ def thing_type_denial(user, thing_type, capabilities=None) -> str | None:
         f"This deployment does not allow you to offer a {label}.",
         caps.request_url,
     )
+
+
+def community_contribution_types(collection, user) -> frozenset[str]:
+    """The thing types `user` may add to `collection` **regardless** of what
+    `thing_type_denial()` would say — empty unless this is a member
+    contributing to a COMMUNITY collection they were invited to.
+
+    A `CreatorPolicy` gates *initiating*: opening a collection, or offering a
+    verb under your own name or into your own collection. It does not gate a
+    member adding a thing to a COMMUNITY group someone else already runs, of a
+    type that group's owner has **explicitly** put in `allowed_thing_types`.
+    That owner is the vetted party — a deployment narrow enough to hold
+    COMMUNITY creation behind a request vetted them — and naming the type in
+    the allowlist is them opening their group to it.
+
+    An empty `allowed_thing_types` is deliberately **not** "every type" here:
+    an empty allowlist means the owner made no choice, so the deployment's own
+    default still decides what an un-vetted member may bring in. The exception
+    needs a positive act by the owner.
+
+    Returns the empty set for `None`, a PROPRIETARY collection, the collection's
+    own owner, a non-member, and an empty allowlist — so a caller can gate on
+    `thing_type in community_contribution_types(...)` and nothing slips through
+    a collection the person has no standing in.
+
+    Upstream this is dead weight: `OpenCreatorPolicy` allows every verb, so
+    `thing_type_denial()` returns `None` and no caller ever reaches for this.
+    """
+    if collection is None or collection.mode != Collection.Mode.COMMUNITY:
+        return frozenset()
+    allowlist = collection.allowed_thing_types or []
+    if not allowlist:
+        return frozenset()
+    code = getattr(user, "code", None)
+    if code is None or not collection.is_invited(code):
+        return frozenset()
+    return frozenset(allowlist)
 
 
 def _denial(message, request_url):
